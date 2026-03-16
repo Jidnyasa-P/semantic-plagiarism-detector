@@ -1,0 +1,21 @@
+# ── Vector Search ─────────────────────────────────────────────────────────────
+faiss-cpu>=1.8.0                # FAISS ANN search (use faiss-gpu if CUDA available)
+
+# ── Core NLP ──────────────────────────────────────────────────────────────────
+sentence-transformers>=2.7.0    # Transformer embeddings (all-MiniLM-L6-v2)
+torch>=2.0.0                    # PyTorch backend for sentence-transformers
+
+# ── PDF Parsing ───────────────────────────────────────────────────────────────
+PyPDF2>=3.0.1                   # Extract text from PDF files
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+streamlit>=1.35.0               # Dashboard framework
+
+# ── Data & ML ─────────────────────────────────────────────────────────────────
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0             # cosine_similarity utility
+
+# ── Visualisation ─────────────────────────────────────────────────────────────
+matplotlib>=3.8.0
+seaborn>=0.13.0
