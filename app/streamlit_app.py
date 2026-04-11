@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from sklearn.metrics.pairwise import cosine_similarity
+from typing import Any
 
 from utils.pdf_reader      import extract_text_from_pdf
 from utils.text_chunking   import chunk_documents
@@ -157,7 +158,7 @@ with tab_warnings:
                 c1, c2 = st.columns([3, 1])
                 with c1:
                     st.markdown(f"**{flag['doc_a']}**  ↔  **{flag['doc_b']}**")
-                    st.progress(flag["similarity"],
+                    st.progress(float(flag["similarity"]),
                                 text=f"Similarity: {flag['similarity']*100:.1f}%")
                 with c2:
                     st.markdown(
@@ -259,11 +260,13 @@ with tab_faiss:
 # ══ TAB 3 ════════════════════════════════════════════════════════════════════
 with tab_matrix:
     st.subheader("📋 Similarity Matrix")
-    def _highlight(val):
-        if val >= 0.90:         return "background-color:#ff4b4b;color:white;font-weight:bold;"
-        elif val >= threshold:  return "background-color:#ffa500;color:white;font-weight:bold;"
+    def _highlight(val: Any) -> str:
+        numeric_val = float(val)
+        if numeric_val >= 0.90:         return "background-color:#ff4b4b;color:white;font-weight:bold;"
+        elif numeric_val >= threshold:  return "background-color:#ffa500;color:white;font-weight:bold;"
         return ""
-    st.dataframe(active_sim_df.style.format("{:.4f}").applymap(_highlight),
+    styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
+    st.dataframe(styled_df,
                  use_container_width=True)
     st.download_button("⬇️ Download CSV", active_sim_df.to_csv().encode("utf-8"),
                        "similarity_matrix.csv", "text/csv")
@@ -291,7 +294,7 @@ with tab_drill:
         with c2: doc_b = st.selectbox("Document B",
                                        [d for d in doc_names if d != doc_a], index=0, key="db")
 
-        score       = active_sim_df.loc[doc_a, doc_b]
+        score = float(active_sim_df.loc[doc_a, doc_b])
         score_color = "#ff4b4b" if score >= 0.9 else ("#ffa500" if score >= threshold else "#21c55d")
         st.markdown(
             f"**Overall Similarity:** "
