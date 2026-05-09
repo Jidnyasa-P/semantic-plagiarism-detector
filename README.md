@@ -1,5 +1,7 @@
 # 🔍 Semantic Plagiarism Detection System
 
+> **[▶ Live Demo](https://semantic-plagiarism-detector.streamlit.app/)**
+
 A production-ready NLP application that detects **semantic plagiarism** in student
 assignments—even when text has been paraphrased—using Sentence Transformers, cosine
 similarity, and **FAISS vector search**.
