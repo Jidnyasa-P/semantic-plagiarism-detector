@@ -32,10 +32,37 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Authentication ────────────────────────────────────────────────────────────
+_CREDENTIALS = {"admin": "admin123", "teacher": "teach2024"}
+
+def _login_page():
+    st.title("🔍 Semantic Plagiarism Detector")
+    st.subheader("🔒 Login")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login", use_container_width=True)
+    if submitted:
+        if _CREDENTIALS.get(username) == password:
+            st.session_state["authenticated"] = True
+            st.session_state["username"] = username
+            st.rerun()
+        else:
+            st.error("Invalid username or password.")
+
+if not st.session_state.get("authenticated"):
+    _login_page()
+    st.stop()
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("<div style='font-size: 72px; line-height: 1;'>🕵️‍♂️</div>", unsafe_allow_html=True)
     st.title("⚙️ Settings")
+    st.markdown(f"👤 Logged in as **{st.session_state.get('username', '')}**")
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+    st.markdown("---")
 
     threshold = st.slider("Plagiarism Threshold", 0.50, 0.99,
                           value=PLAGIARISM_THRESHOLD, step=0.01,
