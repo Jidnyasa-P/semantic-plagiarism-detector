@@ -41,6 +41,13 @@ def test_chunk_max_similarity(dummy_embeddings):
     # Empty embedding handling
     assert chunk_max_similarity(emb_a, np.array([])) == 0.0
 
+
+def test_chunk_max_similarity_supports_batching(dummy_embeddings):
+    unbatched = chunk_max_similarity(dummy_embeddings["doc_A"], dummy_embeddings["doc_B"])
+    batched = chunk_max_similarity(dummy_embeddings["doc_A"], dummy_embeddings["doc_B"], batch_size=1)
+    assert np.isclose(batched, unbatched)
+
+
 def test_document_similarity_matrix(dummy_embeddings):
     df = document_similarity_matrix(dummy_embeddings)
     
@@ -54,6 +61,14 @@ def test_document_similarity_matrix(dummy_embeddings):
     # A and B should be more similar to each other than A and C
     assert df.loc["doc_A", "doc_B"] > df.loc["doc_A", "doc_C"]
 
+
+def test_document_similarity_matrix_accepts_batch_size(dummy_embeddings):
+    unbatched = document_similarity_matrix(dummy_embeddings)
+    batched = document_similarity_matrix(dummy_embeddings, batch_size=2)
+    assert isinstance(batched, pd.DataFrame)
+    assert np.allclose(unbatched.values, batched.values)
+
+
 def test_chunk_similarity_matrix(dummy_embeddings):
     df = chunk_similarity_matrix(dummy_embeddings)
     
@@ -65,6 +80,23 @@ def test_chunk_similarity_matrix(dummy_embeddings):
     
     # Symmetric
     assert df.loc["doc_A", "doc_B"] == df.loc["doc_B", "doc_A"]
+
+
+def test_chunk_similarity_matrix_accepts_batch_size(dummy_embeddings):
+    unbatched = chunk_similarity_matrix(dummy_embeddings)
+    batched = chunk_similarity_matrix(dummy_embeddings, batch_size=1)
+    assert isinstance(batched, pd.DataFrame)
+    assert np.allclose(unbatched.values, batched.values)
+
+
+def test_batch_size_rejects_non_integer(dummy_embeddings):
+    with pytest.raises(ValueError, match="batch_size must be an integer"):
+        document_similarity_matrix(dummy_embeddings, batch_size=0.5)
+    with pytest.raises(ValueError, match="batch_size must be an integer"):
+        chunk_max_similarity(dummy_embeddings["doc_A"], dummy_embeddings["doc_B"], batch_size=0.5)
+    with pytest.raises(ValueError, match="batch_size must be an integer"):
+        chunk_similarity_matrix(dummy_embeddings, batch_size=0.5)
+
 
 def test_document_similarity_matrix_1d_embedding():
     # Covers the elif emb.ndim == 1 branch (line 48)
