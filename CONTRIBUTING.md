@@ -37,6 +37,14 @@ pip install -r requirements.txt
 
 ---
 
+## Issue Assignment Policy
+
+- Issues are assigned on a first-come, first-served basis unless stated otherwise.
+- If multiple contributors request the same issue, the maintainer may ask for a brief implementation plan before assigning it.
+- Assigned contributors are expected to make reasonable progress within 3 days. If there is no update or communication, the issue may be unassigned and made available to others.
+- Please do not start work on an issue unless it has been assigned to you or discussed with a maintainer.
+- All pull requests must reference the related issue using `Fixes #<issue_number>`.
+
 ## Pull Requests
 
 ## Description

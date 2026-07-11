@@ -24,6 +24,7 @@ from utils.corpus_db   import (
     init_corpus_db, add_document, get_document_by_hash, get_all_documents,
     add_chunks, get_chunk_registry, get_all_embeddings, delete_document, clear_all_data
 )
+from utils.network_graph import plot_similarity_network
 
 @st.cache_resource
 def _init_db_once():
@@ -431,13 +432,14 @@ col4.metric("📈 Avg Similarity",  f"{avg_sim:.1%}")
 col5.metric("🗂️ FAISS Vectors",  faiss_index.ntotal)
 st.divider()
 
-# ── Tabs (6 tabs) ──────────────────────────────────────────────────────────────
-tab_warnings, tab_faiss, tab_matrix, tab_heatmap, tab_drill, tab_corpus = st.tabs([
+# ── Tabs (7 tabs) ──────────────────────────────────────────────────────────────
+tab_warnings, tab_faiss, tab_matrix, tab_heatmap, tab_drill, tab_network, tab_corpus = st.tabs([
     "⚠️ Plagiarism Warnings",
     "⚡ FAISS Chunk Search",
     "📋 Similarity Matrix",
     "🗺️ Heatmap",
     "🔬 Pair Drill-Down",
+    "🕸️ Plagiarism Network",
     "🗃️ Manage Corpus",
 ])
 
@@ -667,6 +669,67 @@ with tab_drill:
                 st.text_area("", raw_texts.get(doc_b, "(empty)"), height=300, key="tb")
 
 # ══ TAB 6 ═════════════════════════════════════════════════════════════════════
+with tab_network:
+    st.subheader("🕸️ Plagiarism Network Graph")
+    st.markdown(
+        "Visualize document relationships as a connection network. "
+        "Each circle represents a document. Lines connect documents that share similarity "
+        "above the connection threshold. Thicker lines indicate higher similarity."
+    )
+    
+    net_col1, net_col2 = st.columns([3, 1])
+    with net_col1:
+        network_threshold = st.slider(
+            "Network Connection Threshold", 0.50, 0.99,
+            value=threshold, step=0.01, key="net_threshold_slider",
+            help="Minimum similarity score required to connect two documents in the graph."
+        )
+    with net_col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        show_isolated = st.checkbox("Show isolated documents", value=True,
+                                    help="Uncheck to hide documents with no suspicious connections.")
+
+    import networkx as nx
+    G_stats = nx.Graph()
+    for name in doc_names:
+        G_stats.add_node(name)
+    for i in range(len(doc_names)):
+        for j in range(i + 1, len(doc_names)):
+            score = float(active_sim_df.iloc[i, j])
+            if score >= network_threshold:
+                G_stats.add_edge(doc_names[i], doc_names[j])
+                
+    if not show_isolated:
+        nodes_to_keep = [node for node, deg in G_stats.degree() if deg > 0]
+        filtered_sim_df = active_sim_df.loc[nodes_to_keep, nodes_to_keep]
+    else:
+        filtered_sim_df = active_sim_df
+
+    if len(filtered_sim_df) == 0:
+        st.info("No connections found above the threshold. Try lowering the threshold or checking 'Show isolated documents'.")
+    else:
+        with st.spinner("Generating network graph layout..."):
+            fig_net = plot_similarity_network(filtered_sim_df, threshold=network_threshold, title="")
+            st.plotly_chart(fig_net, use_container_width=True)
+            
+        st.subheader("📊 Graph Insights")
+        stat_c1, stat_c2, stat_c3 = st.columns(3)
+        
+        components = list(nx.connected_components(G_stats))
+        num_clusters = sum(1 for c in components if len(c) > 1)
+        
+        degrees = dict(G_stats.degree())
+        max_deg = max(degrees.values()) if degrees else 0
+        most_connected = [node for node, deg in degrees.items() if deg == max_deg and deg > 0]
+        
+        stat_c1.metric("🕸️ Active Connections", G_stats.number_of_edges())
+        stat_c2.metric("🔗 Plagiarism Clusters", num_clusters)
+        if most_connected:
+            stat_c3.metric("🚨 Most Flagged Node", most_connected[0].split(".")[0], f"{max_deg} connections")
+        else:
+            stat_c3.metric("🚨 Most Flagged Node", "None", "0 connections")
+
+# ══ TAB 7 ═════════════════════════════════════════════════════════════════════
 with tab_corpus:
     st.subheader("🗃️ Manage Corpus Database")
     st.markdown("View, inspect, and delete documents stored in the database.")
