@@ -25,6 +25,7 @@ from utils.corpus_db   import (
     add_chunks, get_chunk_registry, get_all_embeddings, delete_document, clear_all_data
 )
 from utils.network_graph import plot_similarity_network
+from utils.translator import translate_text
 
 @st.cache_resource
 def _init_db_once():
@@ -656,6 +657,18 @@ with tab_drill:
                         col1, col2 = st.columns(2)
                         with col1: st.markdown(f"**From {doc_a}**"); st.info(ca)
                         with col2: st.markdown(f"**From {doc_b}**"); st.warning(cb)
+                        
+                        translate_key = f"trans_{doc_a}_{doc_b}_{rank}"
+                        if st.checkbox("🌐 Translate to English", key=translate_key):
+                            col_t1, col_t2 = st.columns(2)
+                            with col_t1:
+                                trans_a = translate_text(ca, "en")
+                                if trans_a.lower().strip() != ca.lower().strip():
+                                    st.caption(f"**Translated:** {trans_a}")
+                            with col_t2:
+                                trans_b = translate_text(cb, "en")
+                                if trans_b.lower().strip() != cb.lower().strip():
+                                    st.caption(f"**Translated:** {trans_b}")
             else:
                 st.success("No paragraph pairs above the threshold for this pair.")
 
