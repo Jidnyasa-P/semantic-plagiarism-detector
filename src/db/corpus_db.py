@@ -10,7 +10,7 @@ import os
 import numpy as np
 from datetime import datetime
 
-_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "corpus.db"))
+_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "corpus.db"))
 
 
 def _connect() -> sqlite3.Connection:
@@ -100,7 +100,7 @@ def add_chunks(chunks_to_add: list) -> None:
 
 def get_chunk_registry() -> list:
     """Reconstructs the registry of ChunkRecord objects ordered by vector_id."""
-    from utils.faiss_index import ChunkRecord
+    from src.core.faiss_index import ChunkRecord
     with _connect() as conn:
         rows = conn.execute(
             "SELECT filename, chunk_index, chunk_text FROM chunks ORDER BY vector_id ASC"
