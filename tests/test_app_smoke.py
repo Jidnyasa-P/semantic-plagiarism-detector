@@ -31,7 +31,7 @@ def mock_embed_chunks(chunks, batch_size=64):
     val = 1.0 / (384 ** 0.5)
     return np.full((len(chunks), 384), val, dtype="float32")
 
-@patch("utils.embedding_model.embed_chunks", side_effect=mock_embed_chunks)
+@patch("src.core.embedding_model.embed_chunks", side_effect=mock_embed_chunks)
 def test_app_smoke(mock_embed):
     # Instantiate AppTest
     at = AppTest.from_file("app/streamlit_app.py")
@@ -62,8 +62,18 @@ def test_app_smoke(mock_embed):
     at.file_uploader[0].upload("doc1.pdf", pdf1, "application/pdf")
     at.file_uploader[0].upload("doc2.pdf", pdf2, "application/pdf")
     
-    # Execute full pipeline
-    at.run(timeout=30)
+    # Run to render the index button
+    at.run()
+    
+    # Find the process button and click it to index the files into the corpus database
+    process_btn = None
+    for btn in at.button:
+        if "Process & Index" in btn.label:
+            process_btn = btn
+            break
+            
+    assert process_btn is not None, "Process & Index button not found"
+    process_btn.click().run(timeout=30)
     
     # Ensure no exceptions occurred during pipeline execution
     assert not at.exception
