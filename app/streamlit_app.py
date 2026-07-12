@@ -12,7 +12,7 @@ from typing import Any
 
 from utils.pdf_reader      import extract_text_from_pdf
 from utils.text_chunking   import chunk_documents
-from utils.embedding_model import embed_documents
+from utils.embedding_model import embed_documents, _get_model_name
 from utils.similarity      import (
     document_similarity_matrix, flag_plagiarism,
     find_most_similar_chunks, PLAGIARISM_THRESHOLD,
@@ -20,6 +20,8 @@ from utils.similarity      import (
 from utils.heatmap     import plot_similarity_heatmap, plot_similarity_heatmap_plotly, plot_chunk_similarity_comparison
 from utils.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks
 from utils.auth        import init_db, verify_user, get_user_role, get_all_users, add_user, delete_user, update_password
+
+from app import theme
 
 @st.cache_resource
 def _init_db_once():
@@ -32,6 +34,7 @@ st.set_page_config(
     page_icon="🔍", layout="wide",
     initial_sidebar_state="expanded",
 )
+theme.inject_css()
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; }
@@ -43,39 +46,39 @@ st.markdown("""
 def _login_page():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-        .stApp { background: radial-gradient(ellipse at 60% 20%, #1a1f35 0%, #0d1117 60%); min-height: 100vh; }
+        .stApp { background-color: #F8FAFC !important; min-height: 100vh; }
         [data-testid="stSidebar"] { display: none; }
         .block-container { padding: 0 !important; max-width: 100% !important; }
         .stTextInput > label {
             font-size: 0.75rem !important; font-weight: 600 !important;
-            color: #8b949e !important; text-transform: uppercase !important; letter-spacing: 0.6px !important;
+            color: #475569 !important; text-transform: uppercase !important; letter-spacing: 0.6px !important;
         }
         .stTextInput > div > div > input {
-            background: rgba(13,17,23,0.9) !important; border: 1px solid #30363d !important;
-            border-radius: 10px !important; color: #e6edf3 !important;
+            background: #FFFFFF !important; border: 1px solid #E2E8F0 !important;
+            border-radius: 8px !important; color: #0F172A !important;
             font-size: 0.9rem !important; padding: 11px 14px !important;
         }
         .stTextInput > div > div > input:focus {
-            border-color: #388bfd !important;
-            box-shadow: 0 0 0 3px rgba(56,139,253,0.2) !important;
+            border-color: #0D9488 !important;
+            box-shadow: 0 0 0 3px rgba(13,148,136,0.15) !important;
         }
         .stFormSubmitButton > button {
             width: 100% !important;
-            background: linear-gradient(135deg, #1d6feb 0%, #388bfd 100%) !important;
+            background: linear-gradient(135deg, #0D9488 0%, #0F766E 100%) !important;
             color: #fff !important; border: none !important;
-            border-radius: 10px !important; padding: 12px !important;
+            border-radius: 8px !important; padding: 12px !important;
             font-size: 0.92rem !important; font-weight: 600 !important;
             margin-top: 8px !important;
-            box-shadow: 0 4px 15px rgba(29,111,235,0.4) !important;
+            box-shadow: 0 4px 12px rgba(13,148,136,0.2) !important;
+        }
+        .stFormSubmitButton > button:hover {
+            background: linear-gradient(135deg, #0F766E 0%, #115E59 100%) !important;
         }
         div[data-testid="stForm"] {
-            background: rgba(22,27,34,0.88) !important;
-            backdrop-filter: blur(16px) !important;
-            border: 1px solid rgba(48,54,61,0.9) !important;
-            border-radius: 20px !important; padding: 36px 30px 32px !important;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6) !important;
+            background: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 12px !important; padding: 36px 30px 32px !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -85,17 +88,17 @@ def _login_page():
         st.markdown("""
             <div style='text-align:center; margin-bottom:24px; padding-top:15vh;'>
                 <div style='display:inline-flex; align-items:center; gap:10px; justify-content:center;'>
-                    <span style='font-size:2rem;'>&#128269;</span>
-                    <span style='font-size:1.75rem; font-weight:700; color:#e6edf3;'>Semantic Plagiarism Detector</span>
+                    <span style='font-size:2.2rem;'>🕵️‍♂️</span>
+                    <span style='font-size:1.75rem; font-weight:700; color:#0F172A; font-family:"Newsreader", serif;'>Semantic Plagiarism Detector</span>
                 </div>
-                <div style='font-size:0.82rem; color:#6e7681; margin-top:6px;'>AI-powered academic integrity platform</div>
+                <div style='font-size:0.82rem; color:#64748B; margin-top:6px; font-weight: 500;'>AI-powered academic integrity platform</div>
             </div>
         """, unsafe_allow_html=True)
         with st.form("login_form"):
             st.markdown("""
-                <div style='font-size:1.4rem; font-weight:700; color:#e6edf3; text-align:center;
-                            text-transform:uppercase; letter-spacing:2px; margin-bottom:24px;'>LOGIN</div>
-                <div style='height:1px; background:linear-gradient(90deg,transparent,#30363d,transparent); margin-bottom:20px;'></div>
+                <div style='font-size:1.4rem; font-weight:700; color:#0F172A; text-align:center;
+                            font-family:"Newsreader", serif; letter-spacing:2px; margin-bottom:24px;'>LOGIN</div>
+                <div style='height:1px; background:linear-gradient(90deg,transparent,#E2E8F0,transparent); margin-bottom:20px;'></div>
             """, unsafe_allow_html=True)
             username  = st.text_input("Username", placeholder="Enter your username")
             password  = st.text_input("Password", type="password", placeholder="Enter your password")
@@ -118,49 +121,78 @@ _is_admin = st.session_state.get("role") == "admin"
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("<div style='font-size: 72px; line-height: 1;'>🕵️♂️</div>", unsafe_allow_html=True)
-    st.title("⚙️ Settings")
-    st.markdown(f"👤 Logged in as **{st.session_state.get('username', '')}** (`{st.session_state.get('role', '')}`)")
+    # Compact brand header
+    st.markdown("""
+    <div style='text-align: center; padding-top: 10px; margin-bottom: 10px;'>
+        <span style='font-size: 2.5rem;'>🕵️‍♂️</span>
+        <div class="sidebar-brand-title">Antigravity Detector</div>
+        <div class="sidebar-brand-kicker">Academic Integrity Portal</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<div class='sidebar-section-label'>User Session</div>", unsafe_allow_html=True)
+    st.markdown(f"👤 Logged in as: **{st.session_state.get('username', '')}**\n\n🔑 Role: `{st.session_state.get('role', '')}`")
+    
     if st.button("🚪 Logout", use_container_width=True):
         st.session_state.clear()
         st.rerun()
-    st.markdown("---")
-
-    threshold = st.slider("Plagiarism Threshold", 0.50, 0.99,
-                          value=PLAGIARISM_THRESHOLD, step=0.01,
-                          help="Cosine similarity above which a pair is flagged.")
-    use_chunk_matrix = st.checkbox("Use chunk-level similarity matrix", value=False)
-    faiss_top_k = st.slider("FAISS: matches per chunk", 1, 20, value=5)
-    st.markdown("---")
-    st.markdown("""
-**How it works**
-1. PDFs parsed with **PyPDF2**
-2. Text split into **paragraph chunks**
-3. Chunks embedded with **all-MiniLM-L6-v2**
-4. **FAISS index** built over all chunk vectors
-5. Pairwise **cosine similarity** computed
-6. Pairs above threshold flagged
-""")
-    st.markdown("---")
-
-    # ── Admin: User Management button ─────────────────────────────────────────
+        
     if _is_admin:
-        if st.button("👥 User Management", use_container_width=True):
-            st.session_state["page"] = "user_management"
-            st.rerun()
         if st.session_state.get("page") == "user_management":
             if st.button("◀ Back to Dashboard", use_container_width=True):
                 st.session_state["page"] = "dashboard"
                 st.rerun()
-        st.markdown("---")
+        else:
+            if st.button("👥 User Management", use_container_width=True):
+                st.session_state["page"] = "user_management"
+                st.rerun()
+                
+    st.markdown("<div class='sidebar-section-label'>Configuration</div>", unsafe_allow_html=True)
+    threshold = st.slider("Plagiarism Threshold", 0.50, 0.99,
+                          value=PLAGIARISM_THRESHOLD, step=0.01,
+                          help="Cosine similarity above which a pair is flagged.")
+    use_chunk_matrix = st.checkbox("Use chunk-level similarity matrix", value=False)
+    
+    with st.expander("⚡ FAISS Options", expanded=False):
+        faiss_top_k = st.slider("FAISS: matches per chunk", 1, 20, value=5)
+        
+    with st.expander("📚 How it Works", expanded=False):
+        st.markdown("""
+        1. PDFs parsed with **pypdf**
+        2. Text split into **paragraph chunks**
+        3. Chunks embedded with **paraphrase-multilingual-MiniLM-L12-v2**
+        4. **FAISS index** built over all chunk vectors
+        5. Pairwise **cosine similarity** computed
+        6. Pairs above threshold flagged
+        """)
+        
+    with st.expander("🌐 Supported Languages", expanded=False):
+        st.markdown("""
+        Uses a multilingual embedding model supporting 50+ languages, including:
+        - English, Spanish, French, German, Chinese, Arabic, Japanese, and more.
+        - Automatically handles cross-lingual similarity checking.
+        """)
 
+    st.markdown("<div style='margin-top: 1rem;'></div>", unsafe_allow_html=True)
     st.caption("Semantic Plagiarism Detector · FAISS edition")
 # ── Header ─────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="hero-kicker">Academic Integrity Portal</div>
+""", unsafe_allow_html=True)
 st.title("🔍 Semantic Plagiarism Detection System")
 st.markdown(
-    "Upload student PDFs. Detects **semantic similarity** (even paraphrased text) "
-    "using transformer embeddings + **FAISS vector search**."
+    "Upload student PDFs to detect **semantic similarity** and paraphrased content "
+    "using advanced transformer embeddings and **FAISS vector search**."
 )
+
+model_name = _get_model_name()
+st.markdown(f"""
+<div style='display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0.5rem; margin-bottom: 1.5rem;'>
+    <div class="meta-chip">🤖 Model: <code>{model_name}</code></div>
+    <div class="meta-chip">🎯 Threshold: <code>{threshold:.2f}</code></div>
+    <div class="meta-chip">⚙️ Mode: <code>{"Chunk-level" if use_chunk_matrix else "Doc-level"}</code></div>
+</div>
+""", unsafe_allow_html=True)
 st.divider()
 
 # ── User Management page (admin only) ─────────────────────────────────────────
@@ -297,29 +329,39 @@ with tab_warnings:
     if not flags:
         st.success("✅ No suspicious pairs found above the current threshold.")
     else:
-        flags_df = pd.DataFrame(flags)
-        st.download_button(
-            "⬇️ Download Plagiarism Report (CSV)",
-            flags_df.to_csv(index=False).encode("utf-8"),
-            "plagiarism_warnings.csv", "text/csv", use_container_width=True
+        severity_filter = st.multiselect(
+            "Filter by Severity",
+            options=["🔴 High", "🟡 Medium"],
+            default=["🔴 High", "🟡 Medium"],
+            help="Filter warnings displayed in the list below. This does not change the core detection logic or what gets logged/flagged."
         )
-        st.markdown("<br>", unsafe_allow_html=True)
-        for flag in flags:
-            color = "#ff4b4b" if "High" in flag["severity"] else "#ffa500"
-            with st.container(border=True):
-                c1, c2 = st.columns([3, 1])
-                with c1:
-                    st.markdown(f"**{flag['doc_a']}**  ↔  **{flag['doc_b']}**")
-                    st.progress(float(flag["similarity"]),
-                                text=f"Similarity: {flag['similarity']*100:.1f}%")
-                with c2:
-                    st.markdown(
-                        f"<div style='text-align:center;padding-top:12px;'>"
-                        f"<span style='background:{color};color:white;padding:5px 14px;"
-                        f"border-radius:14px;font-weight:700;font-size:0.9rem;'>"
-                        f"{flag['severity']}</span></div>",
-                        unsafe_allow_html=True,
-                    )
+        
+        filtered_flags = [f for f in flags if f["severity"] in severity_filter]
+        
+        if not filtered_flags:
+            st.info("No warnings match the selected severity filter.")
+        else:
+            flags_df = pd.DataFrame(filtered_flags)
+            st.download_button(
+                "⬇️ Download Plagiarism Report (CSV)",
+                flags_df.to_csv(index=False).encode("utf-8"),
+                "plagiarism_warnings.csv", "text/csv", use_container_width=True
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+            for flag in filtered_flags:
+                with st.container(border=True):
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        st.markdown(f"**{flag['doc_a']}**  ↔  **{flag['doc_b']}**")
+                        st.progress(float(flag["similarity"]),
+                                    text=f"Similarity: {flag['similarity']*100:.1f}%")
+                    with c2:
+                        tier = theme.severity_tier(float(flag["similarity"]), threshold)
+                        badge = theme.badge_html(tier, flag["severity"])
+                        st.markdown(
+                            f"<div style='text-align:center;padding-top:12px;'>{badge}</div>",
+                            unsafe_allow_html=True,
+                        )
 
 # ══ TAB 2 ═════════════════════════════════════════════════════════════════════
 with tab_faiss:
@@ -359,7 +401,6 @@ with tab_faiss:
 
             st.subheader("🔑 Matching Paragraph Pairs")
             for i, match in enumerate(faiss_matches[:20]):
-                color = "#ff4b4b" if match["similarity"] >= 0.90 else "#ffa500"
                 with st.expander(
                     f"#{i+1} · {match['source_doc']}  ↔  {match['match_doc']} "
                     f"— {match['similarity']*100:.1f}%", expanded=(i == 0)
@@ -371,11 +412,11 @@ with tab_faiss:
                     with cb:
                         st.markdown(f"**📄 {match['match_doc']}**")
                         st.warning(match["match_chunk_text"])
+                    
+                    tier = theme.severity_tier(match["similarity"], faiss_threshold)
+                    badge = theme.badge_html(tier, f"Similarity: {match['similarity']*100:.1f}%")
                     st.markdown(
-                        f"<div style='text-align:right;'>"
-                        f"<span style='background:{color};color:white;padding:3px 12px;"
-                        f"border-radius:10px;font-size:0.85rem;font-weight:700;'>"
-                        f"Similarity: {match['similarity']*100:.1f}%</span></div>",
+                        f"<div style='text-align:right; margin-top:10px;'>{badge}</div>",
                         unsafe_allow_html=True,
                     )
             if len(faiss_matches) > 20:
@@ -406,10 +447,34 @@ with tab_faiss:
                         st.markdown("**Your query:**"); st.info(query_text.strip())
                     with cm:
                         st.markdown(f"**Match in {record.doc_name}:**"); st.warning(record.chunk_text)
+                    
+                    tier = theme.severity_tier(score, faiss_threshold)
+                    badge = theme.badge_html(tier, f"Similarity: {score:.1%}")
+                    st.markdown(
+                        f"<div style='text-align:right; margin-top: 10px;'>{badge}</div>",
+                        unsafe_allow_html=True,
+                    )
 
 # ══ TAB 3 ═════════════════════════════════════════════════════════════════════
 with tab_matrix:
     st.subheader("📋 Similarity Matrix")
+    st.markdown(f"""
+    <div class="legend-container">
+        <span style="font-weight: 700; color: #0F172A;">Legend:</span>
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #ff4b4b;"></span>
+            <span>High Plagiarism (≥ 90%)</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #ffa500;"></span>
+            <span>Medium Plagiarism (≥ {threshold:.2f})</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #F1F5F9; border: 1px solid #E2E8F0;"></span>
+            <span>Below Threshold</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     def _highlight(val: Any) -> str:
         v = float(val)
         if v >= 0.90:        return "background-color:#ff4b4b;color:white;font-weight:bold;"
@@ -440,18 +505,19 @@ with tab_heatmap:
         interactive = st.checkbox("Interactive mode (hover values)", value=True,
                                   help="Plotly chart with hover tooltips. Uncheck for static view.")
 
-    if interactive:
-        plotly_fig = plot_similarity_heatmap_plotly(
-            active_sim_df, title="Document Semantic Similarity", threshold=threshold
-        )
-        st.plotly_chart(plotly_fig, use_container_width=True)
-        st.caption("💡 Hover over any cell to see exact similarity. Red borders = flagged pairs.")
-    else:
-        fig = plot_similarity_heatmap(
-            active_sim_df, title="Document Semantic Similarity",
-            threshold=threshold, annotate=True, dpi=200,
-        )
-        st.pyplot(fig, use_container_width=True)
+    with st.container(border=True):
+        if interactive:
+            plotly_fig = plot_similarity_heatmap_plotly(
+                active_sim_df, title="Document Semantic Similarity", threshold=threshold
+            )
+            st.plotly_chart(plotly_fig, use_container_width=True)
+            st.caption("💡 Hover over any cell to see exact similarity. Red borders = flagged pairs.")
+        else:
+            fig = plot_similarity_heatmap(
+                active_sim_df, title="Document Semantic Similarity",
+                threshold=threshold, annotate=True, dpi=200,
+            )
+            st.pyplot(fig, use_container_width=True)
 
     buf = _io.BytesIO()
     static_fig = plot_similarity_heatmap(
@@ -475,7 +541,8 @@ with tab_drill:
                                        [d for d in doc_names if d != doc_a], index=0, key="db")
 
         score = float(active_sim_df.loc[doc_a, doc_b])
-        score_color = "#ff4b4b" if score >= 0.9 else ("#ffa500" if score >= threshold else "#21c55d")
+        tier = theme.severity_tier(score, threshold)
+        score_color = theme.tier_color(tier)
         st.markdown(
             f"**Overall Similarity:** "
             f"<span style='color:{score_color};font-size:1.2rem;font-weight:700;'>"
@@ -503,6 +570,13 @@ with tab_drill:
                         col1, col2 = st.columns(2)
                         with col1: st.markdown(f"**From {doc_a}**"); st.info(ca)
                         with col2: st.markdown(f"**From {doc_b}**"); st.warning(cb)
+                        
+                        tier = theme.severity_tier(sim, threshold)
+                        badge = theme.badge_html(tier, f"Similarity: {sim:.1%}")
+                        st.markdown(
+                            f"<div style='text-align:right; margin-top: 10px;'>{badge}</div>",
+                            unsafe_allow_html=True,
+                        )
             else:
                 st.success("No paragraph pairs above the threshold for this pair.")
 
