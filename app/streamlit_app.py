@@ -228,55 +228,98 @@ def process_new_files(uploaded_files):
     skipped_files = []
     empty_docs = []
     
-    with st.status("🧠 Processing documents...", expanded=True) as status:
-        for f in uploaded_files:
-            file_bytes = f.read()
-            file_hash = hashlib.sha256(file_bytes).hexdigest()
-            
-            existing_name = get_document_by_hash(file_hash)
-            if existing_name:
-                skipped_files.append(f"{f.name} (duplicate of {existing_name})")
-                continue
-                
-            status.write(f"📖 Extracting text from {f.name}...")
-            try:
-                text = extract_text(_io.BytesIO(file_bytes), f.name)
-            except OCRDependencyError as exc:
-                st.error(f"Could not OCR **{f.name}**: {exc}")
-                empty_docs.append(f.name)
-                continue
-            if not text.strip():
-                empty_docs.append(f.name)
-                continue
-                
-            if not add_document(f.name, file_hash):
-                unique_name = f"{os.path.splitext(f.name)[0]}_{file_hash[:6]}{os.path.splitext(f.name)[1]}"
-                add_document(unique_name, file_hash)
-                doc_to_save = unique_name
-            else:
-                doc_to_save = f.name
-                
-            status.write(f"✂️ Chunking text into paragraphs for {doc_to_save}...")
-            chunks = chunk_document(text)
-            
-            status.write(f"🧬 Generating semantic embeddings for {doc_to_save}...")
-            embs = embed_chunks(chunks)
-            
-            if embs.ndim == 2 and embs.shape[0] > 0:
-                start_vid = st.session_state["faiss_index"].ntotal
-                chunks_data = []
-                for i, (chk, emb) in enumerate(zip(chunks, embs)):
-                    vid = start_vid + i
-                    chunks_data.append((vid, doc_to_save, i, chk, emb))
-                    
-                add_chunks(chunks_data)
-                st.session_state["faiss_index"].add(embs.astype("float32"))
-                new_files_processed += 1
-                
-        status.update(label="✅ Processing complete!", state="complete", expanded=False)
+    if not uploaded_files:
+        return 0, [], []
         
-    faiss.write_index(st.session_state["faiss_index"], "corpus.index")
-    st.session_state["registry"] = get_chunk_registry()
+    total_files = len(uploaded_files)
+    progress_placeholder = st.empty()
+    
+    try:
+        with progress_placeholder.container():
+            with st.status("🧠 Processing documents...", expanded=True) as status:
+                progress_bar = st.progress(0.0)
+                
+                for idx, f in enumerate(uploaded_files):
+                    file_progress_start = idx / total_files
+                    file_progress_end = (idx + 1) / total_files
+                    
+                    # Stage 1: Reading uploaded documents
+                    progress_bar.progress(file_progress_start + 0.1 / total_files)
+                    status.write(f"📖 **Stage 1/5: Reading uploaded documents** - Extracting text from {f.name}...")
+                    
+                    file_bytes = f.read()
+                    file_hash = hashlib.sha256(file_bytes).hexdigest()
+                    
+                    existing_name = get_document_by_hash(file_hash)
+                    if existing_name:
+                        skipped_files.append(f"{f.name} (duplicate of {existing_name})")
+                        progress_bar.progress(file_progress_end)
+                        continue
+                        
+                    try:
+                        text = extract_text(_io.BytesIO(file_bytes), f.name)
+                    except OCRDependencyError as exc:
+                        st.error(f"Could not OCR **{f.name}**: {exc}")
+                        empty_docs.append(f.name)
+                        progress_bar.progress(file_progress_end)
+                        continue
+
+                    if not text.strip():
+                        empty_docs.append(f.name)
+                        progress_bar.progress(file_progress_end)
+                        continue
+                        
+                    if not add_document(f.name, file_hash):
+                        unique_name = f"{os.path.splitext(f.name)[0]}_{file_hash[:6]}{os.path.splitext(f.name)[1]}"
+                        add_document(unique_name, file_hash)
+                        doc_to_save = unique_name
+                    else:
+                        doc_to_save = f.name
+                        
+                    # Stage 2: Preparing document chunks
+                    progress_bar.progress(file_progress_start + 0.2 / total_files)
+                    status.write(f"✂️ **Stage 2/5: Preparing document chunks** for {doc_to_save}...")
+                    chunks = chunk_document(text)
+                    
+                    # Stage 3: Generating embeddings
+                    progress_bar.progress(file_progress_start + 0.7 / total_files)
+                    status.write(f"🧬 **Stage 3/5: Generating embeddings** for {doc_to_save}...")
+                    embs = embed_chunks(chunks)
+                    
+                    # Stage 4: Building the FAISS index
+                    progress_bar.progress(file_progress_start + 0.95 / total_files)
+                    status.write(f"⚡ **Stage 4/5: Building the FAISS index** for {doc_to_save}...")
+                    
+                    if embs.ndim == 2 and embs.shape[0] > 0:
+                        start_vid = st.session_state["faiss_index"].ntotal
+                        chunks_data = []
+                        for i, (chk, emb) in enumerate(zip(chunks, embs)):
+                            vid = start_vid + i
+                            chunks_data.append((vid, doc_to_save, i, chk, emb))
+                            
+                        add_chunks(chunks_data)
+                        st.session_state["faiss_index"].add(embs.astype("float32"))
+                        new_files_processed += 1
+                        
+                    progress_bar.progress(file_progress_end)
+                
+                # Stage 5: Finalizing analysis
+                progress_bar.progress(0.95)
+                status.write("💾 **Stage 5/5: Finalizing analysis** - Saving index and updating registry...")
+                
+                faiss.write_index(st.session_state["faiss_index"], "corpus.index")
+                st.session_state["registry"] = get_chunk_registry()
+                
+                progress_bar.progress(1.0)
+                status.update(label="✅ Processing complete!", state="complete", expanded=False)
+                
+        # Clean up the progress status component entirely on success so completion messages render beautifully
+        progress_placeholder.empty()
+        
+    except Exception as e:
+        progress_placeholder.empty()
+        st.error(f"❌ **Error during document processing:** {str(e)}")
+        st.stop()
     
     return new_files_processed, skipped_files, empty_docs
 
@@ -415,6 +458,19 @@ if _is_admin and st.session_state.get("page") == "user_management":
                     st.caption("(protected)")
     st.stop()
 
+# Render queued indexing results from session state if any
+if "indexing_results" in st.session_state:
+    results = st.session_state.pop("indexing_results")
+    n_added = results.get("n_added", 0)
+    skipped = results.get("skipped", [])
+    empty = results.get("empty", [])
+    if n_added > 0:
+        st.success(f"✅ Successfully indexed {n_added} new documents!")
+    if skipped:
+        st.warning("⚠️ Skipped duplicate files:\n" + "\n".join([f"- {s}" for s in skipped]))
+    if empty:
+        st.warning("⚠️ Skipped empty files:\n" + "\n".join([f"- {e}" for e in empty]))
+
 # ── File uploader ──────────────────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
     "📂 Upload Assignment Documents to Corpus", type=["pdf", "docx", "txt"],
@@ -425,12 +481,11 @@ if uploaded_files:
     with c_btn:
         if st.button("🚀 Process & Index Uploads", use_container_width=True):
             n_added, skipped, empty = process_new_files(uploaded_files)
-            if n_added > 0:
-                st.success(f"✅ Successfully indexed {n_added} new documents!")
-            if skipped:
-                st.warning(f"⚠️ Skipped duplicate files:\n" + "\n".join([f"- {s}" for s in skipped]))
-            if empty:
-                st.warning(f"⚠️ Skipped empty files:\n" + "\n".join([f"- {e}" for e in empty]))
+            st.session_state["indexing_results"] = {
+                "n_added": n_added,
+                "skipped": skipped,
+                "empty": empty
+            }
             st.rerun()
 
 active_docs = get_all_documents()

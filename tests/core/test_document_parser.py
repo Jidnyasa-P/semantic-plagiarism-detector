@@ -30,7 +30,8 @@ def _make_docx_bytes(text: str) -> bytes:
     return buf.getvalue()
 
 
-def test_extract_from_pdf_bytes():
+@patch("src.core.document_parser._ocr_pdf_page", return_value="Some OCR extracted text containing more than eight words to pass the check.")
+def test_extract_from_pdf_bytes(mock_ocr):
     pdf_bytes = _make_pdf_bytes("Hello PDF")
     # For blank page PDF, pdfplumber might return empty string, but it shouldn't error
     result = extract_text_from_pdf(pdf_bytes)
@@ -39,9 +40,9 @@ def test_extract_from_pdf_bytes():
 
 def test_extract_from_pdf_filters_repeated_headers_page_numbers_and_whitespace():
     page_one = MagicMock()
-    page_one.extract_text.return_value = "Research Report\n\nIntroduction\nPage 1"
+    page_one.extract_text.return_value = "Research Report\n\nIntroduction to the study of semantic plagiarism detection methods\nPage 1"
     page_two = MagicMock()
-    page_two.extract_text.return_value = "Research Report\n\nBody content\nPage 2"
+    page_two.extract_text.return_value = "Research Report\n\nBody content representing the core implementation details\nPage 2"
 
     fake_pdf = MagicMock()
     fake_pdf.pages = [page_one, page_two]
@@ -71,7 +72,8 @@ def test_extract_from_txt_bytes():
     assert result == "Hello TXT"
 
 
-def test_extract_text_routing():
+@patch("src.core.document_parser._ocr_pdf_page", return_value="Mocked OCR text containing more than eight words to ensure it is valid.")
+def test_extract_text_routing(mock_ocr):
     pdf_bytes = _make_pdf_bytes("Hello PDF")
     docx_bytes = _make_docx_bytes("Hello DOCX")
     txt_bytes = b"Hello TXT"
