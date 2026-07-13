@@ -91,6 +91,39 @@ def document_similarity_matrix(
     return df
 
 
+# ── Hybrid similarity (lexical + semantic) ─────────────────────────────────────
+
+def hybrid_similarity_matrix(
+    semantic_df: pd.DataFrame,
+    lexical_df: pd.DataFrame,
+    w: float = 0.7
+) -> pd.DataFrame:
+    """
+    Combine semantic and lexical similarity matrices using a weighted formula.
+
+    Args:
+        semantic_df: Symmetric DataFrame from document_similarity_matrix().
+        lexical_df: Symmetric DataFrame from lexical_similarity_matrix().
+        w: Weight for semantic similarity (0.0 = pure lexical, 1.0 = pure semantic).
+           Default is 0.7, favoring semantic similarity.
+
+    Returns:
+        Symmetric DataFrame with hybrid similarity scores.
+        hybrid_score = w * semantic + (1 - w) * lexical
+    """
+    if not (0.0 <= w <= 1.0):
+        raise ValueError(f"Weight w must be between 0.0 and 1.0, got {w}")
+
+    # Ensure both DataFrames have the same shape and index/columns
+    if semantic_df.shape != lexical_df.shape:
+        raise ValueError("Semantic and lexical matrices must have the same shape")
+    if not semantic_df.index.equals(lexical_df.index) or not semantic_df.columns.equals(lexical_df.columns):
+        raise ValueError("Semantic and lexical matrices must have the same index and columns")
+
+    hybrid_df = w * semantic_df + (1 - w) * lexical_df
+    return hybrid_df
+
+
 # ── Chunk-level similarity (local plagiarism detection) ────────────────────────
 
 def chunk_max_similarity(
