@@ -16,7 +16,9 @@ from src.core.embedding_model import embed_documents, embed_chunks, _get_model_n
 from src.core.similarity      import (
     document_similarity_matrix, flag_plagiarism,
     find_most_similar_chunks, PLAGIARISM_THRESHOLD,
+    hybrid_similarity_matrix,
 )
+from src.core.lexical_similarity import lexical_similarity_matrix
 from src.visualization.heatmap     import plot_similarity_heatmap, plot_similarity_heatmap_plotly, plot_chunk_similarity_comparison
 from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks, build_index_from_matrix
 from src.db.auth        import init_db, verify_user, get_user_role, get_all_users, add_user, delete_user, update_password
@@ -355,6 +357,8 @@ with st.sidebar:
     threshold = st.slider("Plagiarism Threshold", 0.50, 0.99,
                           value=PLAGIARISM_THRESHOLD, step=0.01,
                           help="Cosine similarity above which a pair is flagged.")
+    hybrid_weight = st.slider("Semantic ↔ Lexical weight (w)", 0.0, 1.0, value=0.7, step=0.05,
+                               help="Weight for semantic similarity (0.0 = pure lexical, 1.0 = pure semantic).")
     use_chunk_matrix = st.checkbox("Use chunk-level similarity matrix", value=False)
     
     if st.button("🗑️ Clear Entire Corpus", use_container_width=True, type="primary"):
@@ -503,7 +507,13 @@ chunked_docs = get_all_chunk_texts()
 faiss_index = st.session_state["faiss_index"]
 registry = st.session_state["registry"]
 
-active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
+# Compute lexical similarity matrix
+lexical_df = lexical_similarity_matrix(raw_texts)
+
+# Combine semantic and lexical using hybrid weight
+hybrid_df = hybrid_similarity_matrix(sim_df, lexical_df, w=hybrid_weight)
+
+active_sim_df = chunk_sim_df if use_chunk_matrix else hybrid_df
 flags         = flag_plagiarism(active_sim_df, threshold=threshold)
 
 # ── Summary metrics ────────────────────────────────────────────────────────────

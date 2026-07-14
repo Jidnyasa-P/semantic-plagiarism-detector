@@ -88,6 +88,18 @@ def compute_tfidf_similarities(pairs: list) -> np.ndarray:
     return np.array(similarities)
 
 
+def compute_hybrid_similarities(pairs: list, w: float = 0.7) -> np.ndarray:
+    """Compute hybrid similarity combining semantic and TF-IDF scores."""
+    semantic_sims = compute_semantic_similarities(pairs)
+    tfidf_sims = compute_tfidf_similarities(pairs)
+    
+    if not (0.0 <= w <= 1.0):
+        raise ValueError(f"Weight w must be between 0.0 and 1.0, got {w}")
+    
+    hybrid_sims = w * semantic_sims + (1 - w) * tfidf_sims
+    return hybrid_sims
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  Metrics
 # ══════════════════════════════════════════════════════════════════════════════
@@ -250,20 +262,25 @@ def evaluate():
     print("-" * 72)
 
     # ── Compute similarities ──────────────────────────────────────────────────
-    print("\n  [1/5] Computing semantic similarities (Sentence Transformers)...")
+    print("\n  [1/6] Computing semantic similarities (Sentence Transformers)...")
     semantic_sims = compute_semantic_similarities(pairs)
 
-    print("  [2/5] Computing TF-IDF similarities (lexical baseline)...")
+    print("  [2/6] Computing TF-IDF similarities (lexical baseline)...")
     tfidf_sims = compute_tfidf_similarities(pairs)
 
+    print("  [3/6] Computing hybrid similarities (w=0.7)...")
+    hybrid_sims = compute_hybrid_similarities(pairs, w=0.7)
+
     # ── Threshold sweep ───────────────────────────────────────────────────────
-    print("  [3/5] Sweeping thresholds (0.30 -> 0.95)...")
+    print("  [4/6] Sweeping thresholds (0.30 -> 0.95)...")
     sem_sweep = sweep_thresholds(semantic_sims, labels)
     tfidf_sweep = sweep_thresholds(tfidf_sims, labels)
+    hybrid_sweep = sweep_thresholds(hybrid_sims, labels)
 
     # Find optimal threshold (max F1)
     sem_best   = sem_sweep.loc[sem_sweep["f1"].idxmax()]
     tfidf_best = tfidf_sweep.loc[tfidf_sweep["f1"].idxmax()]
+    hybrid_best = hybrid_sweep.loc[hybrid_sweep["f1"].idxmax()]
 
     # ── ROC-AUC ───────────────────────────────────────────────────────────────
     sem_fpr, sem_tpr, _ = roc_curve(labels, semantic_sims)
@@ -272,28 +289,30 @@ def evaluate():
     tfidf_fpr, tfidf_tpr, _ = roc_curve(labels, tfidf_sims)
     tfidf_auc = auc(tfidf_fpr, tfidf_tpr)
 
+    hybrid_fpr, hybrid_tpr, _ = roc_curve(labels, hybrid_sims)
+    hybrid_auc = auc(hybrid_fpr, hybrid_tpr)
+
     # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "=" * 72)
     print("  RESULTS")
     print("=" * 72)
 
-    header = f"  {'Metric':<28} {'Semantic':>12} {'TF-IDF':>12} {'Delta':>10}"
+    header = f"  {'Metric':<28} {'Semantic':>12} {'TF-IDF':>12} {'Hybrid':>12}"
     print(header)
-    print("  " + "-" * 64)
+    print("  " + "-" * 68)
 
-    def row(name, sem_val, tfidf_val, fmt=".4f", pct=False):
+    def row(name, sem_val, tfidf_val, hybrid_val, fmt=".4f", pct=False):
         s = f"{sem_val:{fmt}}"
         t = f"{tfidf_val:{fmt}}"
-        diff = sem_val - tfidf_val
-        d = f"+{diff:{fmt}}" if diff >= 0 else f"{diff:{fmt}}"
-        print(f"  {name:<28} {s:>12} {t:>12} {d:>10}")
+        h = f"{hybrid_val:{fmt}}"
+        print(f"  {name:<28} {s:>12} {t:>12} {h:>12}")
 
-    row("ROC-AUC",          sem_auc,                   tfidf_auc)
-    row("Best F1",           float(sem_best["f1"]),     float(tfidf_best["f1"]))
-    row("  @ Threshold",     float(sem_best["threshold"]), float(tfidf_best["threshold"]))
-    row("  Precision",       float(sem_best["precision"]), float(tfidf_best["precision"]))
-    row("  Recall",          float(sem_best["recall"]),    float(tfidf_best["recall"]))
-    row("  Accuracy",        float(sem_best["accuracy"]),  float(tfidf_best["accuracy"]))
+    row("ROC-AUC",          sem_auc,                   tfidf_auc,                 hybrid_auc)
+    row("Best F1",           float(sem_best["f1"]),     float(tfidf_best["f1"]),   float(hybrid_best["f1"]))
+    row("  @ Threshold",     float(sem_best["threshold"]), float(tfidf_best["threshold"]), float(hybrid_best["threshold"]))
+    row("  Precision",       float(sem_best["precision"]), float(tfidf_best["precision"]), float(hybrid_best["precision"]))
+    row("  Recall",          float(sem_best["recall"]),    float(tfidf_best["recall"]),    float(hybrid_best["recall"]))
+    row("  Accuracy",        float(sem_best["accuracy"]),  float(tfidf_best["accuracy"]),  float(hybrid_best["accuracy"]))
 
     print()
     print(f"  Confusion Matrix (Semantic @ threshold={sem_best['threshold']:.2f}):")
@@ -301,31 +320,34 @@ def evaluate():
     print()
     print(f"  Confusion Matrix (TF-IDF @ threshold={tfidf_best['threshold']:.2f}):")
     print(f"    TP={int(tfidf_best['tp'])}  FP={int(tfidf_best['fp'])}  FN={int(tfidf_best['fn'])}  TN={int(tfidf_best['tn'])}")
+    print()
+    print(f"  Confusion Matrix (Hybrid @ threshold={hybrid_best['threshold']:.2f}):")
+    print(f"    TP={int(hybrid_best['tp'])}  FP={int(hybrid_best['fp'])}  FN={int(hybrid_best['fn'])}  TN={int(hybrid_best['tn'])}")
 
     # ── Per-pair details ──────────────────────────────────────────────────────
     print("\n" + "-" * 72)
     print("  PER-PAIR SCORES")
     print("-" * 72)
-    print(f"  {'ID':<8} {'Category':<22} {'Label':<16} {'Semantic':>9} {'TF-IDF':>9} {'Gap':>8}")
-    print("  " + "-" * 66)
+    print(f"  {'ID':<8} {'Category':<22} {'Label':<16} {'Semantic':>9} {'TF-IDF':>9} {'Hybrid':>9}")
+    print("  " + "-" * 70)
     for i, p in enumerate(pairs):
-        gap = semantic_sims[i] - tfidf_sims[i]
         print(f"  {p['id']:<8} {p['category']:<22} {p['label']:<16} "
-              f"{semantic_sims[i]:>8.4f}  {tfidf_sims[i]:>8.4f} {gap:>+7.4f}")
+              f"{semantic_sims[i]:>8.4f}  {tfidf_sims[i]:>8.4f}  {hybrid_sims[i]:>8.4f}")
 
     # ── Save outputs ──────────────────────────────────────────────────────────
-    print(f"\n  [4/5] Saving plots to {RESULTS_DIR}/...")
+    print(f"\n  [5/6] Saving plots to {RESULTS_DIR}/...")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     plot_roc_curves(labels, semantic_sims, tfidf_sims, RESULTS_DIR / "roc_curve.png")
     plot_pr_curves(labels, semantic_sims, tfidf_sims,  RESULTS_DIR / "pr_curve.png")
     plot_similarity_distributions(labels, semantic_sims, tfidf_sims, RESULTS_DIR / "similarity_distribution.png")
 
-    print("  [5/5] Saving metrics...")
+    print("  [6/6] Saving metrics...")
 
     # Threshold sweep CSV
     sem_sweep.to_csv(RESULTS_DIR / "threshold_sweep_semantic.csv", index=False)
     tfidf_sweep.to_csv(RESULTS_DIR / "threshold_sweep_tfidf.csv", index=False)
+    hybrid_sweep.to_csv(RESULTS_DIR / "threshold_sweep_hybrid.csv", index=False)
 
     # Summary metrics JSON
     summary = {
@@ -349,6 +371,15 @@ def evaluate():
             "recall":            float(tfidf_best["recall"]),
             "accuracy":          float(tfidf_best["accuracy"]),
         },
+        "hybrid": {
+            "weight":            0.7,
+            "roc_auc":           round(hybrid_auc, 4),
+            "best_threshold":    float(hybrid_best["threshold"]),
+            "best_f1":           float(hybrid_best["f1"]),
+            "precision":         float(hybrid_best["precision"]),
+            "recall":            float(hybrid_best["recall"]),
+            "accuracy":          float(hybrid_best["accuracy"]),
+        },
         "per_pair": [
             {
                 "id": p["id"],
@@ -356,6 +387,7 @@ def evaluate():
                 "label": p["label"],
                 "semantic_score": round(float(semantic_sims[i]), 4),
                 "tfidf_score":    round(float(tfidf_sims[i]), 4),
+                "hybrid_score":   round(float(hybrid_sims[i]), 4),
             }
             for i, p in enumerate(pairs)
         ],

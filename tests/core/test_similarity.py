@@ -7,7 +7,9 @@ from src.core.similarity import (
     chunk_similarity_matrix,
     flag_plagiarism,
     find_most_similar_chunks,
+    hybrid_similarity_matrix,
 )
+from src.core.lexical_similarity import lexical_similarity_matrix
 
 @pytest.fixture
 def dummy_embeddings():
@@ -173,3 +175,116 @@ def test_flag_plagiarism():
     d2_d3 = next(f for f in flags if f["doc_a"] == "D2" and f["doc_b"] == "D3")
     assert d2_d3["similarity"] == 0.80
     assert "Medium" in d2_d3["severity"]
+
+
+def test_lexical_similarity_matrix_identical_documents():
+    documents = {
+        "doc1": "This is a test document with some text.",
+        "doc2": "This is a test document with some text.",
+        "doc3": "This is completely different content."
+    }
+    df = lexical_similarity_matrix(documents)
+    
+    assert isinstance(df, pd.DataFrame)
+    assert df.shape == (3, 3)
+    assert list(df.columns) == ["doc1", "doc2", "doc3"]
+    
+    # Identical documents should have similarity 1.0
+    assert np.isclose(df.loc["doc1", "doc2"], 1.0)
+    assert np.isclose(df.loc["doc1", "doc1"], 1.0)
+    
+    # Different documents should have lower similarity
+    assert df.loc["doc1", "doc3"] < 0.9
+
+
+def test_lexical_similarity_matrix_empty_documents():
+    df = lexical_similarity_matrix({})
+    assert isinstance(df, pd.DataFrame)
+    assert df.shape == (0, 0)
+
+
+def test_lexical_similarity_matrix_single_document():
+    documents = {"doc1": "Single document content."}
+    df = lexical_similarity_matrix(documents)
+    
+    assert isinstance(df, pd.DataFrame)
+    assert df.shape == (1, 1)
+    assert np.isclose(df.loc["doc1", "doc1"], 1.0)
+
+
+def test_hybrid_similarity_matrix_boundary_conditions():
+    semantic_df = pd.DataFrame({
+        "doc1": [1.0, 0.8, 0.3],
+        "doc2": [0.8, 1.0, 0.4],
+        "doc3": [0.3, 0.4, 1.0]
+    }, index=["doc1", "doc2", "doc3"])
+    
+    lexical_df = pd.DataFrame({
+        "doc1": [1.0, 0.6, 0.2],
+        "doc2": [0.6, 1.0, 0.3],
+        "doc3": [0.2, 0.3, 1.0]
+    }, index=["doc1", "doc2", "doc3"])
+    
+    # w=1.0 should return pure semantic
+    hybrid_pure_semantic = hybrid_similarity_matrix(semantic_df, lexical_df, w=1.0)
+    assert np.allclose(hybrid_pure_semantic.values, semantic_df.values)
+    
+    # w=0.0 should return pure lexical
+    hybrid_pure_lexical = hybrid_similarity_matrix(semantic_df, lexical_df, w=0.0)
+    assert np.allclose(hybrid_pure_lexical.values, lexical_df.values)
+    
+    # w=0.5 should be average
+    hybrid_avg = hybrid_similarity_matrix(semantic_df, lexical_df, w=0.5)
+    expected = (semantic_df + lexical_df) / 2
+    assert np.allclose(hybrid_avg.values, expected.values)
+
+
+def test_hybrid_similarity_matrix_default_weight():
+    semantic_df = pd.DataFrame({
+        "doc1": [1.0, 0.8],
+        "doc2": [0.8, 1.0]
+    }, index=["doc1", "doc2"])
+    
+    lexical_df = pd.DataFrame({
+        "doc1": [1.0, 0.6],
+        "doc2": [0.6, 1.0]
+    }, index=["doc1", "doc2"])
+    
+    # Default weight should be 0.7
+    hybrid_df = hybrid_similarity_matrix(semantic_df, lexical_df)
+    expected = 0.7 * semantic_df + 0.3 * lexical_df
+    assert np.allclose(hybrid_df.values, expected.values)
+
+
+def test_hybrid_similarity_matrix_invalid_weight():
+    semantic_df = pd.DataFrame([[1.0, 0.8], [0.8, 1.0]])
+    lexical_df = pd.DataFrame([[1.0, 0.6], [0.6, 1.0]])
+    
+    with pytest.raises(ValueError, match="Weight w must be between 0.0 and 1.0"):
+        hybrid_similarity_matrix(semantic_df, lexical_df, w=1.5)
+    
+    with pytest.raises(ValueError, match="Weight w must be between 0.0 and 1.0"):
+        hybrid_similarity_matrix(semantic_df, lexical_df, w=-0.1)
+
+
+def test_hybrid_similarity_matrix_shape_mismatch():
+    semantic_df = pd.DataFrame([[1.0, 0.8], [0.8, 1.0]])
+    lexical_df = pd.DataFrame([[1.0, 0.6, 0.3], [0.6, 1.0, 0.4], [0.3, 0.4, 1.0]])
+    
+    with pytest.raises(ValueError, match="Semantic and lexical matrices must have the same shape"):
+        hybrid_similarity_matrix(semantic_df, lexical_df)
+
+
+def test_hybrid_similarity_matrix_index_mismatch():
+    semantic_df = pd.DataFrame({
+        "doc1": [1.0, 0.8],
+        "doc2": [0.8, 1.0]
+    }, index=["doc1", "doc2"])
+    
+    lexical_df = pd.DataFrame({
+        "docA": [1.0, 0.6],
+        "docB": [0.6, 1.0]
+    }, index=["docA", "docB"])
+    
+    with pytest.raises(ValueError, match="Semantic and lexical matrices must have the same index and columns"):
+        hybrid_similarity_matrix(semantic_df, lexical_df)
