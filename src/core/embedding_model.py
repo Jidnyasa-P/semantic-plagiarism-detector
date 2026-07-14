@@ -15,7 +15,6 @@ from typing import List
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
-import torch
 
 # ── Singleton model loader ─────────────────────────────────────────────────────
 # We load the model once and reuse it across calls to avoid repeated I/O.
@@ -34,9 +33,7 @@ def _get_model() -> SentenceTransformer:
     if _model is None:
         model_name = _get_model_name()
         print(f"[embedding_model] Loading model: {model_name} …")
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[embedding_model] Device: {device}")
-        _model = SentenceTransformer(model_name, device=device)
+        _model = SentenceTransformer(model_name)
         print("[embedding_model] Model loaded successfully.")
     return _model
 

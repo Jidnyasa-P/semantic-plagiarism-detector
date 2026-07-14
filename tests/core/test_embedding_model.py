@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
-import torch
 import src.core.embedding_model as embedding_model
 from src.core.embedding_model import embed_chunks, embed_documents, get_document_embedding
 
@@ -71,8 +70,7 @@ def test_get_model_uses_multilingual_default(monkeypatch):
     result = embedding_model._get_model()
 
     assert result is model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    sentence_transformer.assert_called_once_with("paraphrase-multilingual-MiniLM-L12-v2", device=device)
+    sentence_transformer.assert_called_once_with("paraphrase-multilingual-MiniLM-L12-v2")
 
 
 def test_get_model_uses_environment_override(monkeypatch):
@@ -85,5 +83,4 @@ def test_get_model_uses_environment_override(monkeypatch):
     result = embedding_model._get_model()
 
     assert result is model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    sentence_transformer.assert_called_once_with("distiluse-base-multilingual-cased-v2", device=device)
+    sentence_transformer.assert_called_once_with("distiluse-base-multilingual-cased-v2")
