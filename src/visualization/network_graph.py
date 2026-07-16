@@ -141,20 +141,29 @@ def plot_similarity_network(
         )
         
     node_trace = go.Scatter(
-        x=node_x, y=node_y,
-        mode="markers+text",
-        text=[name.split(".")[0] for name in node_text],  # Short display name (no extension)
-        textposition="top center",
-        hoverinfo="text",
-textfont=dict(color="#0F172A", size=10, family="Arial Black"),        marker=dict(
-            showscale=False,
-            color=node_color,
-            size=node_size,
-            line=dict(width=2, color="#ffffff")
+    x=node_x,
+    y=node_y,
+    mode="markers+text",
+    text=[name.split(".")[0] for name in node_text],
+    textposition="top center",
+    hoverinfo="text",
+    hovertext=node_hover,
+    textfont=dict(
+        color="#0F172A",
+        size=10,
+        family="Arial Black",
+    ),
+    marker=dict(
+        showscale=False,
+        color=node_color,
+        size=node_size,
+        line=dict(
+            width=2,
+            color="#ffffff",
         ),
-        hovertext=node_hover,
-        name="Documents"
-    )
+    ),
+    name="Documents",
+)
     
     # ── Figure Layout ─────────────────────────────────────────────────────────────
     fig = go.Figure(
