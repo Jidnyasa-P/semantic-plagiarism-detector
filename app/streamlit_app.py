@@ -11,7 +11,6 @@ import streamlit as st
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import Any
 from utils.warning_list import render_warning_controls
-from src.core.document_parser import extract_text_from_pdf
 from src.core.text_chunking import chunk_documents
 from src.core.embedding_model import embed_documents
 from src.core.similarity import (
@@ -21,6 +20,10 @@ from src.core.similarity import (
 from src.visualization.heatmap import plot_similarity_heatmap, plot_chunk_similarity_comparison
 from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks
 from src.core.webhook import send_plagiarism_alert
+from src.core.document_parser import (
+    extract_text_from_pdf,
+    prepare_text_for_embedding,
+)
 
 # Must be the first Streamlit command called
 st.set_page_config(
@@ -160,29 +163,75 @@ else:
     # ── Pipeline (cached) ─────────────────────────────────────────────────────────
     @st.cache_data(show_spinner=False)
     def run_pipeline(file_bytes_dict: dict):
-        raw_texts = {
-            name: extract_text_from_pdf(_io.BytesIO(data))
-            for name, data in file_bytes_dict.items()
-        }
-        chunked_docs = chunk_documents(raw_texts)
-        embeddings   = embed_documents(chunked_docs)
-        sim_df       = document_similarity_matrix(embeddings)
+      raw_texts = {
+        name: extract_text_from_pdf(_io.BytesIO(data))
+        for name, data in file_bytes_dict.items()
+    }
 
-        names = list(embeddings.keys())
-        n     = len(names)
-        chunk_mat = np.zeros((n, n))
-        for i, na in enumerate(names):
-            for j, nb in enumerate(names):
-                if i == j:
-                    chunk_mat[i, j] = 1.0
-                elif j > i:
-                    ea, eb = embeddings[na], embeddings[nb]
-                    score  = float(np.max(cosine_similarity(ea, eb))) if ea.size and eb.size else 0.0
-                    chunk_mat[i, j] = chunk_mat[j, i] = score
-        chunk_sim_df = pd.DataFrame(chunk_mat, index=names, columns=names)
+    # Original chunks are preserved for UI display.
+      chunked_docs = chunk_documents(raw_texts)
 
-        faiss_index, registry = build_index(embeddings, chunked_docs)
-        return raw_texts, chunked_docs, embeddings, sim_df, chunk_sim_df, faiss_index, registry
+    # Translated English chunks are used only for embeddings.
+      translated_chunked_docs = {}
+
+      for doc_name, chunks in chunked_docs.items():
+        translated_chunked_docs[doc_name] = []
+
+        for chunk in chunks:
+            prepared = prepare_text_for_embedding(chunk)
+
+            translated_chunked_docs[doc_name].append(
+                prepared["embedding_text"]
+            )
+
+    # Generate embeddings from translated English text.
+      embeddings = embed_documents(translated_chunked_docs)
+
+      sim_df = document_similarity_matrix(embeddings)
+
+      names = list(embeddings.keys())
+      n = len(names)
+      chunk_mat = np.zeros((n, n))
+
+      for i, na in enumerate(names):
+        for j, nb in enumerate(names):
+            if i == j:
+                chunk_mat[i, j] = 1.0
+            elif j > i:
+                ea = embeddings[na]
+                eb = embeddings[nb]
+
+                score = (
+                    float(np.max(cosine_similarity(ea, eb)))
+                    if ea.size and eb.size
+                    else 0.0
+                )
+
+                chunk_mat[i, j] = score
+                chunk_mat[j, i] = score
+
+      chunk_sim_df = pd.DataFrame(
+        chunk_mat,
+        index=names,
+        columns=names,
+    )
+
+    # Store original chunks in the FAISS registry for UI display,
+    # while the vectors themselves come from translated English text.
+      faiss_index, registry = build_index(
+        embeddings,
+        chunked_docs,
+    )
+
+      return (
+        raw_texts,
+        chunked_docs,
+        embeddings,
+        sim_df,
+        chunk_sim_df,
+        faiss_index,
+        registry,
+    )
 
     file_bytes_dict = {f.name: f.read() for f in uploaded_files}
 

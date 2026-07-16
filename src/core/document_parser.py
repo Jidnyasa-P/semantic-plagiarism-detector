@@ -9,6 +9,8 @@ from collections import Counter
 from pathlib import Path
 from typing import BinaryIO, Dict, List, Union
 
+from langdetect import LangDetectException, detect
+from src.core.translator import translate_text
 import docx
 import pdfplumber
 
@@ -18,6 +20,53 @@ PDFInput = Union[str, bytes, io.BytesIO, BinaryIO]
 
 MIN_NATIVE_WORDS_PER_PAGE = 8
 DEFAULT_OCR_DPI = 250
+
+def detect_text_language(text: str) -> str:
+    """
+    Detect the language of a text chunk.
+
+    Returns language codes such as:
+    en, fr, hi, es, de, etc.
+    """
+    cleaned_text = text.strip()
+
+    if len(cleaned_text) < 20:
+        return "unknown"
+
+    try:
+        return detect(cleaned_text)
+    except LangDetectException:
+        return "unknown"
+
+
+def prepare_text_for_embedding(text: str) -> dict:
+    """
+    Preserve the original text and prepare English text for embeddings.
+    """
+    original_text = text.strip()
+    detected_language = detect_text_language(original_text)
+
+    translated_text = original_text
+    was_translated = False
+
+    if detected_language not in {"en", "unknown"}:
+        translated_result = translate_text(
+            original_text,
+            target_lang="en",
+        )
+
+        if translated_result and not translated_result.startswith(
+            "(Translation Error:"
+        ):
+            translated_text = translated_result
+            was_translated = True
+
+    return {
+        "original_text": original_text,
+        "embedding_text": translated_text,
+        "detected_language": detected_language,
+        "was_translated": was_translated,
+    }
 
 
 class OCRDependencyError(RuntimeError):

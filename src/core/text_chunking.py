@@ -17,17 +17,24 @@ MAX_CHUNK_WORDS = 200       # Hard ceiling; longer chunks are sub-split
 
 def _clean_text(text: str) -> str:
     """
-    Basic text cleaning:
-    - Collapse multiple blank lines → single blank line
-    - Strip leading/trailing whitespace per line
-    - Remove non-printable characters
+    Basic Unicode-safe text cleaning:
+    - Preserve multilingual characters
+    - Remove control characters
+    - Collapse repeated spaces and blank lines
     """
-    # Remove non-printable except newlines and tabs
-    text = re.sub(r"[^\x09\x0A\x20-\x7E]", " ", text)
-    # Collapse multiple spaces
+    # Preserve Unicode text while removing unwanted control characters.
+    text = "".join(
+        character
+        for character in text
+        if character in {"\n", "\t"} or character.isprintable()
+    )
+
+    # Collapse repeated spaces and tabs.
     text = re.sub(r"[ \t]+", " ", text)
-    # Collapse 3+ newlines → double newline (paragraph separator)
+
+    # Collapse 3 or more newlines into one paragraph separator.
     text = re.sub(r"\n{3,}", "\n\n", text)
+
     return text.strip()
 
 
