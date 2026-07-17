@@ -18,7 +18,7 @@ from src.core.similarity import (
     find_most_similar_chunks, PLAGIARISM_THRESHOLD,
 )
 from src.visualization.heatmap import plot_similarity_heatmap, plot_chunk_similarity_comparison
-from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks, save_index, load_index, build_index_from_matrix
+from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks, save_index, load_index, build_index_from_matrix, ChunkRecord
 from src.visualization.network_graph import plot_similarity_network
 from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks
 from src.core.webhook import send_plagiarism_alert
@@ -482,11 +482,13 @@ else:
             # No existing index, use the new one
             faiss_index = faiss_index_new
             registry = registry_new
-            raw_texts = raw_texts_new
-            chunked_docs = chunked_docs_new
-            embeddings = embeddings_new
-            sim_df = sim_df_new
-            chunk_sim_df = chunk_sim_df_new
+
+        # Always set pipeline variables from the new results
+        raw_texts = raw_texts_new
+        chunked_docs = chunked_docs_new
+        embeddings = embeddings_new
+        sim_df = sim_df_new
+        chunk_sim_df = chunk_sim_df_new
         
         # Save the updated FAISS index to disk
         save_index(faiss_index, _INDEX_PATH)
