@@ -648,11 +648,13 @@ else:
             # No existing index: use the newly generated data.
             faiss_index = faiss_index_new
             registry = registry_new
-            raw_texts = raw_texts_new
-            chunked_docs = chunked_docs_new
-            embeddings = embeddings_new
-            sim_df = sim_df_new
-            chunk_sim_df = chunk_sim_df_new
+
+        # Always set pipeline variables from the new results
+        raw_texts = raw_texts_new
+        chunked_docs = chunked_docs_new
+        embeddings = embeddings_new
+        sim_df = sim_df_new
+        chunk_sim_df = chunk_sim_df_new
 
         # Save the updated FAISS index.
         save_index(faiss_index, _INDEX_PATH)
