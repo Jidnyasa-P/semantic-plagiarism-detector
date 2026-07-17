@@ -34,6 +34,7 @@ init_corpus_db()
 
 # FAISS index file path
 _INDEX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "corpus.index"))
+from src.utils.pdf_report import generate_plagiarism_report
 from src.db.auth import init_db, verify_user, get_user_role
 
 # Must be the first Streamlit command called
@@ -722,6 +723,31 @@ else:
                             col1, col2 = st.columns(2)
                             with col1: st.markdown(f"**From {doc_a}**"); st.info(ca)
                             with col2: st.markdown(f"**From {doc_b}**"); st.warning(cb)
+                    
+                    st.divider()
+                    st.subheader("📄 Generate PDF Report")
+                    st.caption("Download a formal plagiarism report for this document pair.")
+                    
+                    if st.button("📥 Generate PDF Report", type="primary", use_container_width=True, key="pdf_report"):
+                        with st.spinner("Generating PDF report..."):
+                            try:
+                                pdf_buffer = generate_plagiarism_report(
+                                    doc_a=doc_a,
+                                    doc_b=doc_b,
+                                    overall_similarity=score,
+                                    threshold=threshold,
+                                    top_pairs=top_pairs,
+                                    report_title="Plagiarism Detection Report"
+                                )
+                                st.download_button(
+                                    label="⬇️ Download PDF Report",
+                                    data=pdf_buffer,
+                                    file_name=f"plagiarism_report_{doc_a}_{doc_b}.pdf",
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                            except Exception as e:
+                                st.error(f"Error generating PDF report: {str(e)}")
                 else:
                     st.success("No paragraph pairs above the threshold for this pair.")
 
