@@ -22,7 +22,7 @@ from src.core.faiss_index import build_index, find_plagiarised_chunks, search_si
 from src.visualization.network_graph import plot_similarity_network
 from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks
 from src.core.webhook import send_plagiarism_alert
-from src.db import init_corpus_db, get_all_documents, delete_document, get_all_embeddings, get_chunk_registry, add_document, get_document_by_hash, add_chunks
+from src.db import init_corpus_db, get_all_documents, delete_document, get_all_embeddings, get_chunk_registry, add_document, get_document_by_hash, add_chunks, get_unique_class_sections, get_documents_by_class
 from src.core.document_parser import (
     extract_text_from_pdf,
     prepare_text_for_embedding,
@@ -128,6 +128,16 @@ with st.sidebar:
         st.info("ℹ️ Settings configuration is restricted to Administrators.")
 
     st.markdown("---")
+    st.markdown("### 🔍 Class Filter")
+    unique_classes = ["All Classes"] + get_unique_class_sections()
+    selected_class = st.selectbox(
+        "Select Class/Section",
+        unique_classes,
+        index=0,
+        help="Filter the analysis dashboard and similarity matrices by a specific class section."
+    )
+
+    st.markdown("---")
     st.markdown("""
 **How it works**
 1. PDFs parsed with **PyPDF2**
@@ -219,6 +229,10 @@ if user_role != "admin":
                     results = search_similar_chunks(query_vec, faiss_index, registry,
                                                       top_k=faiss_top_k, threshold=faiss_threshold)
                     
+                    if selected_class != "All Classes":
+                        class_docs = get_documents_by_class(selected_class)
+                        results = [(record, score) for record, score in results if record.doc_name in class_docs]
+                    
                     if not results:
                         st.success("✅ No significant matches found in the assignment database.")
                     else:
@@ -281,6 +295,12 @@ else:
         accept_multiple_files=True, help="Upload 2 or more PDF files.",
     )
     
+    file_bytes_dict = {}
+    if uploaded_files:
+        for f in uploaded_files:
+            file_bytes_dict[f.name] = f.read()
+            f.seek(0)
+    
     # Allow analysis with existing index even without new uploads
     if not uploaded_files:
         if faiss_index is None or faiss_index.ntotal == 0:
@@ -303,6 +323,32 @@ else:
     if len(uploaded_files) < 2:
         st.info("👆 Please upload **at least 2** PDF assignment files to begin.")
         st.stop()
+
+    # ── Metadata Editor Section ──────────────────────────────────────────────────
+    st.markdown("### 📝 Set Document Metadata")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        batch_class = st.text_input("Default Class/Section", value="Class A", help="Default class section for all files in this batch.")
+    with col2:
+        batch_assignment = st.text_input("Default Assignment Title", value="Assignment 1", help="Default assignment title for all files in this batch.")
+        
+    st.markdown("Customize metadata for individual files if needed:")
+    metadata_dict = {}
+    for f in uploaded_files:
+        base_name = os.path.splitext(f.name)[0]
+        guessed_name = base_name.replace("_", " ").replace("-", " ").title()
+        
+        with st.expander(f"📄 {f.name}", expanded=False):
+            student_name = st.text_input(f"Student Name for {f.name}", value=guessed_name, key=f"student_{f.name}")
+            class_section = st.text_input(f"Class/Section for {f.name}", value=batch_class, key=f"class_{f.name}")
+            assignment_title = st.text_input(f"Assignment Title for {f.name}", value=batch_assignment, key=f"assignment_{f.name}")
+            
+            metadata_dict[f.name] = {
+                "student_name": student_name.strip(),
+                "class_section": class_section.strip(),
+                "assignment_title": assignment_title.strip()
+            }
 
     # ── Pipeline (cached) ─────────────────────────────────────────────────────────
     @st.cache_data(show_spinner=False)
@@ -388,7 +434,14 @@ else:
             skipped_files.append(f.name)
         else:
             new_files[f.name] = f.read()
-            add_document(f.name, file_hash)
+            meta = metadata_dict.get(f.name, {"student_name": "", "class_section": "", "assignment_title": ""})
+            add_document(
+                f.name,
+                file_hash,
+                class_section=meta["class_section"],
+                student_name=meta["student_name"],
+                assignment_title=meta["assignment_title"]
+            )
     
     if skipped_files:
         st.info(f"⏭️ Skipped {len(skipped_files)} already-uploaded files: {', '.join(skipped_files)}")
@@ -475,6 +528,26 @@ else:
         active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
         flags         = flag_plagiarism(active_sim_df, threshold=threshold)
 
+    # Apply Class/Section filter if selected
+    if selected_class != "All Classes":
+        class_docs = get_documents_by_class(selected_class)
+        # Filter raw_texts, chunked_docs, embeddings
+        raw_texts = {k: v for k, v in raw_texts.items() if k in class_docs}
+        chunked_docs = {k: v for k, v in chunked_docs.items() if k in class_docs}
+        embeddings = {k: v for k, v in embeddings.items() if k in class_docs}
+        
+        # Slice active_sim_df if available
+        if active_sim_df is not None:
+            filtered_names = [name for name in active_sim_df.index if name in class_docs]
+            if len(filtered_names) >= 2:
+                active_sim_df = active_sim_df.loc[filtered_names, filtered_names]
+                # Re-calculate plagiarism flags for the filtered subset
+                flags = flag_plagiarism(active_sim_df, threshold=threshold)
+            else:
+                active_sim_df = None
+                flags = []
+                st.warning(f"⚠️ Need at least 2 documents in '{selected_class}' to display the similarity matrix and warnings.")
+
     # ── Webhook notifications for high-similarity matches (>= 90%) ───────────────
     if "notified_pairs" not in st.session_state:
         st.session_state.notified_pairs = set()
@@ -550,6 +623,9 @@ else:
                     embeddings, chunked_docs, faiss_index, registry,
                     threshold=faiss_threshold, top_k=faiss_top_k,
                 )
+            
+            if selected_class != "All Classes":
+                faiss_matches = [m for m in faiss_matches if m["match_doc"] in class_docs]
 
             if not faiss_matches:
                 st.success("✅ No chunk-level matches found above the threshold.")
@@ -599,6 +675,10 @@ else:
                 query_vec = embed_chunks([query_text.strip()])[0]
                 results   = search_similar_chunks(query_vec, faiss_index, registry,
                                                   top_k=faiss_top_k, threshold=faiss_threshold)
+            
+            if selected_class != "All Classes":
+                results = [(record, score) for record, score in results if record.doc_name in class_docs]
+
             if not results:
                 st.info("No sufficiently similar chunks found.")
             else:
@@ -617,69 +697,74 @@ else:
     # ══ TAB 3 ════════════════════════════════════════════════════════════════════
     with tab_matrix:
         st.subheader("📋 Similarity Matrix")
-        def _highlight(val: Any) -> str:
-            numeric_val = float(val)
-            if numeric_val >= 0.90:         return "background-color:#ff4b4b;color:white;font-weight:bold;"
-            elif numeric_val >= threshold:  return "background-color:#ffa500;color:white;font-weight:bold;"
-            return ""
-        styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
-        st.dataframe(styled_df, use_container_width=True)
-        st.download_button("⬇️ Download CSV", active_sim_df.to_csv().encode("utf-8"),
-                           "similarity_matrix.csv", "text/csv")
+        if active_sim_df is None:
+            st.info("No similarity matrix available. Please ensure at least 2 documents are uploaded for the selected class.")
+        else:
+            def _highlight(val: Any) -> str:
+                numeric_val = float(val)
+                if numeric_val >= 0.90:         return "background-color:#ff4b4b;color:white;font-weight:bold;"
+                elif numeric_val >= threshold:  return "background-color:#ffa500;color:white;font-weight:bold;"
+                return ""
+            styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
+            st.dataframe(styled_df, use_container_width=True)
+            st.download_button("⬇️ Download CSV", active_sim_df.to_csv().encode("utf-8"),
+                               "similarity_matrix.csv", "text/csv")
 
     # ══ TAB 4 ════════════════════════════════════════════════════════════════════
     with tab_heatmap:
      st.subheader("🗺️ Similarity Heatmap")
+     if active_sim_df is None:
+         st.info("No similarity heatmap or network available. Please ensure at least 2 documents are uploaded for the selected class.")
+     else:
+         heatmap_fig = plot_similarity_heatmap(
+            active_sim_df,
+            title="Document Semantic Similarity",
+            threshold=threshold,
+        )
 
-     heatmap_fig = plot_similarity_heatmap(
-        active_sim_df,
-        title="Document Semantic Similarity",
-        threshold=threshold,
-    )
+         st.pyplot(
+            heatmap_fig,
+            use_container_width=True,
+        )
 
-     st.pyplot(
-        heatmap_fig,
-        use_container_width=True,
-    )
+         buf = _io.BytesIO()
+         heatmap_fig.savefig(
+            buf,
+            format="png",
+            dpi=150,
+            bbox_inches="tight",
+        )
+         buf.seek(0)
 
-     buf = _io.BytesIO()
-     heatmap_fig.savefig(
-        buf,
-        format="png",
-        dpi=150,
-        bbox_inches="tight",
-    )
-     buf.seek(0)
+         st.download_button(
+           "⬇️ Download Heatmap PNG",
+            buf,
+            "heatmap.png",
+            "image/png",
+        )
 
-     st.download_button(
-       "⬇️ Download Heatmap PNG",
-        buf,
-        "heatmap.png",
-        "image/png",
-    )
+         st.divider()
 
-     st.divider()
+         st.subheader("🕸️ Interactive Plagiarism Network")
+         st.caption(
+            "Documents are shown as nodes. Connections appear when "
+            "their similarity is greater than or equal to the selected threshold."
+        )
 
-     st.subheader("🕸️ Interactive Plagiarism Network")
-     st.caption(
-        "Documents are shown as nodes. Connections appear when "
-        "their similarity is greater than or equal to the selected threshold."
-    )
+         network_fig = plot_similarity_network(
+            similarity_df=active_sim_df,
+            threshold=threshold,
+            title="Interactive Document Plagiarism Network",
+        )
 
-     network_fig = plot_similarity_network(
-        similarity_df=active_sim_df,
-        threshold=threshold,
-        title="Interactive Document Plagiarism Network",
-    )
-
-     st.plotly_chart(
-        network_fig,
-        use_container_width=True,
-        config={
-            "displaylogo": False,
-            "scrollZoom": True,
-        },
-    )
+         st.plotly_chart(
+            network_fig,
+            use_container_width=True,
+            config={
+                "displaylogo": False,
+                "scrollZoom": True,
+            },
+        )
 
     # ══ TAB 5 ════════════════════════════════════════════════════════════════════
     with tab_drill:

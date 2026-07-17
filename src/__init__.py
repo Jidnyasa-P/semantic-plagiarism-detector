@@ -41,6 +41,8 @@ from .db import (
     delete_document,
     clear_all_data,
     get_document_chunks_count,
+    get_unique_class_sections,
+    get_documents_by_class,
 )
 from .visualization import (
     plot_similarity_heatmap,
@@ -65,4 +67,5 @@ __all__ = [
     "init_corpus_db", "add_document", "get_document_by_hash",
     "get_all_documents", "add_chunks", "get_chunk_registry",
     "get_all_embeddings", "delete_document", "clear_all_data", "get_document_chunks_count",
+    "get_unique_class_sections", "get_documents_by_class",
 ]

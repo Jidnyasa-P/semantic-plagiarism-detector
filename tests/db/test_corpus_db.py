@@ -12,6 +12,8 @@ from src.db.corpus_db import (
     delete_document,
     clear_all_data,
     get_document_chunks_count,
+    get_unique_class_sections,
+    get_documents_by_class,
     _DB_PATH
 )
 
@@ -108,3 +110,48 @@ def test_delete_document_cascades():
     
     embs = get_all_embeddings()
     assert embs.shape == (1, 384)
+
+
+def test_document_metadata_fields():
+    # Insert with metadata fields
+    res = add_document(
+        "metadata_test.pdf", 
+        "hash_metadata_123", 
+        class_section="Class B", 
+        student_name="Alice Smith", 
+        assignment_title="Homework 1"
+    )
+    assert res is True
+
+    # Retrieve and check fields
+    docs = get_all_documents()
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["filename"] == "metadata_test.pdf"
+    assert doc["class_section"] == "Class B"
+    assert doc["student_name"] == "Alice Smith"
+    assert doc["assignment_title"] == "Homework 1"
+
+
+def test_class_queries():
+    # Add documents belonging to different classes
+    add_document("doc_a.pdf", "hash_a", class_section="Class A", student_name="Student A", assignment_title="Title A")
+    add_document("doc_b.pdf", "hash_b", class_section="Class B", student_name="Student B", assignment_title="Title B")
+    add_document("doc_c.pdf", "hash_c", class_section="Class A", student_name="Student C", assignment_title="Title C")
+    add_document("doc_empty.pdf", "hash_empty")  # No metadata class
+
+    # Verify unique class list
+    classes = get_unique_class_sections()
+    assert "Class A" in classes
+    assert "Class B" in classes
+    assert len(classes) == 2  # None or empty string shouldn't be included
+
+    # Verify getting documents by class
+    class_a_docs = get_documents_by_class("Class A")
+    assert "doc_a.pdf" in class_a_docs
+    assert "doc_c.pdf" in class_a_docs
+    assert len(class_a_docs) == 2
+
+    class_b_docs = get_documents_by_class("Class B")
+    assert "doc_b.pdf" in class_b_docs
+    assert len(class_b_docs) == 1

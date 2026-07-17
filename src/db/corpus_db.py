@@ -24,12 +24,26 @@ def init_corpus_db() -> None:
     with _connect() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS documents (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename     TEXT    UNIQUE NOT NULL,
-                file_hash    TEXT    UNIQUE NOT NULL,
-                upload_date  TEXT    NOT NULL
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename         TEXT    UNIQUE NOT NULL,
+                file_hash        TEXT    UNIQUE NOT NULL,
+                upload_date      TEXT    NOT NULL,
+                class_section    TEXT,
+                student_name     TEXT,
+                assignment_title TEXT
             )
         """)
+        
+        # Schema migration fallback logic: add missing columns if documents table already existed
+        cursor = conn.execute("PRAGMA table_info(documents)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "class_section" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN class_section TEXT")
+        if "student_name" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN student_name TEXT")
+        if "assignment_title" not in columns:
+            conn.execute("ALTER TABLE documents ADD COLUMN assignment_title TEXT")
+
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
                 vector_id    INTEGER PRIMARY KEY,
@@ -43,7 +57,13 @@ def init_corpus_db() -> None:
         conn.commit()
 
 
-def add_document(filename: str, file_hash: str) -> bool:
+def add_document(
+    filename: str,
+    file_hash: str,
+    class_section: str = None,
+    student_name: str = None,
+    assignment_title: str = None
+) -> bool:
     """
     Insert a new document metadata row.
     Returns True if successfully inserted, False if it already exists.
@@ -51,8 +71,8 @@ def add_document(filename: str, file_hash: str) -> bool:
     try:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO documents (filename, file_hash, upload_date) VALUES (?, ?, ?)",
-                (filename, file_hash, datetime.now().isoformat())
+                "INSERT INTO documents (filename, file_hash, upload_date, class_section, student_name, assignment_title) VALUES (?, ?, ?, ?, ?, ?)",
+                (filename, file_hash, datetime.now().isoformat(), class_section, student_name, assignment_title)
             )
             conn.commit()
         return True
@@ -73,9 +93,19 @@ def get_all_documents() -> list:
     """Return all indexed documents sorted by upload date descending."""
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT filename, file_hash, upload_date FROM documents ORDER BY upload_date DESC"
+            "SELECT filename, file_hash, upload_date, class_section, student_name, assignment_title FROM documents ORDER BY upload_date DESC"
         ).fetchall()
-    return [{"filename": r[0], "file_hash": r[1], "upload_date": r[2]} for r in rows]
+    return [
+        {
+            "filename": r[0],
+            "file_hash": r[1],
+            "upload_date": r[2],
+            "class_section": r[3],
+            "student_name": r[4],
+            "assignment_title": r[5]
+        }
+        for r in rows
+    ]
 
 
 def add_chunks(chunks_to_add: list) -> None:
@@ -169,3 +199,22 @@ def clear_all_data() -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM documents")
         conn.commit()
+
+
+def get_unique_class_sections() -> list:
+    """Return all unique class sections from the documents table."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT class_section FROM documents WHERE class_section IS NOT NULL AND class_section != ''"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_documents_by_class(class_section: str) -> list:
+    """Return all document filenames belonging to a class section."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT filename FROM documents WHERE class_section = ?", (class_section,)
+        ).fetchall()
+    return [r[0] for r in rows]
+
