@@ -25,6 +25,7 @@ from src.core.document_parser import (
     extract_text_from_pdf,
     prepare_text_for_embedding,
 )
+from src.db.auth import init_db, verify_user, get_user_role
 
 # Must be the first Streamlit command called
 st.set_page_config(
@@ -32,6 +33,7 @@ st.set_page_config(
     page_icon="🔍", layout="wide",
     initial_sidebar_state="expanded",
 )
+init_db()
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; }
@@ -47,7 +49,7 @@ if "last_interaction" in st.session_state and st.session_state.get("authenticate
     elapsed_time = time.time() - st.session_state.last_interaction
     if elapsed_time > TIMEOUT_LIMIT:
         # Clear sensitive session variables on timeout
-        for key in ["authenticated", "role", "last_interaction"]:
+        for key in ["authenticated", "username", "role", "last_interaction"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.warning("⏱️ Your session has expired due to 15 minutes of inactivity. Please log in again.")
@@ -67,21 +69,27 @@ if not st.session_state.get("authenticated", False):
         login_submitted = st.form_submit_button("Log In", use_container_width=True)
         
         if login_submitted:
-            # Secure hardcoded credentials for demonstrating roles
-            if username == "admin" and password == "admin123":
-                st.session_state.authenticated = True
-                st.session_state.role = "admin"
-                st.session_state.last_interaction = time.time()
-                st.success("Welcome back, Administrator!")
-                st.rerun()
-            elif username == "student" and password == "student123":
-                st.session_state.authenticated = True
-                st.session_state.role = "user"
-                st.session_state.last_interaction = time.time()
-                st.success("Successfully logged in as Student.")
-                st.rerun()
+            username = username.strip().lower()
+
+            if not username or not password:
+                st.error("Please enter both username and password.")
+
+            elif verify_user(username, password):
+                role = get_user_role(username)
+
+                if role is None:
+                    st.error("Unable to determine the user role.")
+                else:
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.session_state.role = role
+                    st.session_state.last_interaction = time.time()
+
+                    st.success(f"Welcome back, {username}!")
+                    st.rerun()
+
             else:
-                st.error("Invalid Username or Password.")
+                st.error("Invalid username or password.")
     st.stop()
 
 # Get secure role for this active interaction
@@ -124,7 +132,7 @@ with st.sidebar:
     
     # Log out button
     if st.button("🚪 Log Out", use_container_width=True):
-        for key in ["authenticated", "role", "last_interaction"]:
+        for key in ["authenticated", "username", "role", "last_interaction"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
