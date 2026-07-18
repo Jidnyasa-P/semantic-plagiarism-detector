@@ -334,6 +334,9 @@ Run the evaluation yourself:
 python -m evaluation.evaluate
 ```
 
+For benchmark schema, contributor guidance, threshold sweeps, and output details,
+see the [Evaluation and Benchmark Dataset Guide](evaluation/README.md).
+
 Results are saved to `evaluation/results/` and include:
 
 | Output | Description |
