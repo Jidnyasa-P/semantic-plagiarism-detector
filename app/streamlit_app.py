@@ -20,6 +20,7 @@ from utils.similarity      import (
 )
 from utils.heatmap      import plot_similarity_heatmap, plot_chunk_similarity_comparison
 from utils.faiss_index  import build_index, find_plagiarised_chunks, search_similar_chunks
+from utils.warning_list import render_warning_controls
 
 # Must be the first Streamlit command called
 st.set_page_config(
@@ -228,36 +229,7 @@ else:
     # ══ TAB 1 ════════════════════════════════════════════════════════════════════
     with tab_warnings:
         st.subheader("⚠️ Plagiarism Warnings")
-        st.caption(f"Pairs with similarity ≥ **{threshold:.2f}**")
-        if not flags:
-            st.success("✅ No suspicious pairs found above the current threshold.")
-        else:
-            flags_df = pd.DataFrame(flags)
-            st.download_button(
-                "⬇️ Download Plagiarism Report (CSV)",
-                flags_df.to_csv(index=False).encode("utf-8"),
-                "plagiarism_warnings.csv",
-                "text/csv",
-                use_container_width=True
-            )
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            for flag in flags:
-                color = "#ff4b4b" if "High" in flag["severity"] else "#ffa500"
-                with st.container(border=True):
-                    c1, c2 = st.columns([3, 1])
-                    with c1:
-                        st.markdown(f"**{flag['doc_a']}** ↔  **{flag['doc_b']}**")
-                        st.progress(float(flag["similarity"]),
-                                    text=f"Similarity: {flag['similarity']*100:.1f}%")
-                    with c2:
-                        st.markdown(
-                            f"<div style='text-align:center;padding-top:12px;'>"
-                            f"<span style='background:{color};color:white;padding:5px 14px;"
-                            f"border-radius:14px;font-weight:700;font-size:0.9rem;'>"
-                            f"{flag['severity']}</span></div>",
-                            unsafe_allow_html=True,
-                        )
+        render_warning_controls(flags, threshold=threshold)
 
     # ══ TAB 2: FAISS ═════════════════════════════════════════════════════════════
     with tab_faiss:
