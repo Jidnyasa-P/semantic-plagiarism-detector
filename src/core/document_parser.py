@@ -488,3 +488,13 @@ def extract_texts(files: list) -> Dict[str, str]:
         results[name] = raw_texts.get(name, "")
         
     return results
+
+# Cross-lingual embedding preparation (Issue #46)
+# Re-exported here because parsing is the boundary where raw source text is
+# converted into embedding-ready text.
+from src.core.cross_lingual import (
+    detect_language,
+    prepare_chunks_for_embedding,
+    prepare_documents_for_embedding,
+    prepare_text_for_embedding,
+)

@@ -1,4 +1,6 @@
 import sys, os
+
+from src.core.cross_lingual import prepare_documents_for_embedding
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
@@ -483,16 +485,11 @@ else:
         chunked_docs = chunk_documents(raw_texts)
 
         # Translated English chunks are used only for embeddings.
-        translated_chunked_docs = {}
+        from src.core.document_parser import prepare_documents_for_embedding
 
-        for doc_name, chunks in chunked_docs.items():
-            translated_chunked_docs[doc_name] = []
-
-            for chunk in chunks:
-                prepared = prepare_text_for_embedding(chunk)
-                translated_chunked_docs[doc_name].append(
-                    prepared["embedding_text"]
-                )
+        translated_chunked_docs, alignment_metadata = (
+            prepare_documents_for_embedding(chunked_docs)
+        )
 
         # Generate embeddings from translated English text.
         embeddings = embed_documents(translated_chunked_docs)
