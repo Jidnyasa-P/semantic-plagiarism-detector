@@ -512,7 +512,7 @@ else:
         chunked_docs = chunk_documents(raw_texts)
 
         # Translated English chunks are used only for embeddings.
-        from src.core.document_parser import prepare_documents_for_embedding
+        from src.core.cross_lingual import prepare_documents_for_embedding
 
         translated_chunked_docs, alignment_metadata = (
             prepare_documents_for_embedding(chunked_docs)
