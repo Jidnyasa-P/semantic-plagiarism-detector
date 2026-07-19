@@ -212,6 +212,77 @@ def test_lexical_similarity_matrix_single_document():
     assert np.isclose(df.loc["doc1", "doc1"], 1.0)
 
 
+def test_lexical_similarity_matrix_caching():
+    """Test that caching works correctly for identical document sets."""
+    documents = {
+        "doc1": "This is a test document with some text.",
+        "doc2": "This is a test document with some text.",
+        "doc3": "This is completely different content."
+    }
+    
+    # Clear cache before test
+    from src.core.lexical_similarity import _cached_lexical_similarity_matrix
+    _cached_lexical_similarity_matrix.cache_clear()
+    
+    # First call - should compute
+    df1 = lexical_similarity_matrix(documents, use_cache=True)
+    
+    # Second call with same documents - should use cache
+    df2 = lexical_similarity_matrix(documents, use_cache=True)
+    
+    # Results should be identical
+    assert np.allclose(df1.values, df2.values)
+    
+    # Cache should have been used (cache_info should show hits)
+    cache_info = _cached_lexical_similarity_matrix.cache_info()
+    assert cache_info.hits > 0
+
+
+def test_lexical_similarity_matrix_cache_bypass():
+    """Test that use_cache=False bypasses the cache."""
+    documents = {
+        "doc1": "This is a test document with some text.",
+        "doc2": "This is a test document with some text.",
+    }
+    
+    # Clear cache before test
+    from src.core.lexical_similarity import _cached_lexical_similarity_matrix
+    _cached_lexical_similarity_matrix.cache_clear()
+    
+    # Call with cache enabled
+    df_cached = lexical_similarity_matrix(documents, use_cache=True)
+    
+    # Call with cache disabled - should bypass cache
+    df_uncached = lexical_similarity_matrix(documents, use_cache=False)
+    
+    # Results should still be identical
+    assert np.allclose(df_cached.values, df_uncached.values)
+
+
+def test_lexical_similarity_matrix_different_documents():
+    """Test that different document sets are cached separately."""
+    documents1 = {
+        "doc1": "This is about machine learning and artificial intelligence.",
+        "doc2": "This is about deep learning and neural networks.",
+    }
+    
+    documents2 = {
+        "doc1": "This is about cooking recipes and baking techniques.",
+        "doc2": "This is about grilling and barbecue methods.",
+    }
+    
+    # Clear cache before test
+    from src.core.lexical_similarity import _cached_lexical_similarity_matrix
+    _cached_lexical_similarity_matrix.cache_clear()
+    
+    df1 = lexical_similarity_matrix(documents1, use_cache=True)
+    df2 = lexical_similarity_matrix(documents2, use_cache=True)
+    
+    # Cache should have 2 entries (both document sets computed)
+    cache_info = _cached_lexical_similarity_matrix.cache_info()
+    assert cache_info.misses == 2  # Both were cache misses (computed)
+
+
 def test_hybrid_similarity_matrix_boundary_conditions():
     semantic_df = pd.DataFrame({
         "doc1": [1.0, 0.8, 0.3],
