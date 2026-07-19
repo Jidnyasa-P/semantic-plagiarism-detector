@@ -275,8 +275,8 @@ def test_lexical_similarity_matrix_different_documents():
     from src.core.lexical_similarity import _cached_lexical_similarity_matrix
     _cached_lexical_similarity_matrix.cache_clear()
     
-    df1 = lexical_similarity_matrix(documents1, use_cache=True)
-    df2 = lexical_similarity_matrix(documents2, use_cache=True)
+    _ = lexical_similarity_matrix(documents1, use_cache=True)
+    _ = lexical_similarity_matrix(documents2, use_cache=True)
     
     # Cache should have 2 entries (both document sets computed)
     cache_info = _cached_lexical_similarity_matrix.cache_info()
