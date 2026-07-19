@@ -201,33 +201,6 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Semantic Plagiarism Detector · FAISS edition")
     
-    # Document management (admin only)
-    if user_role == "admin":
-        st.markdown("### 📁 Document Management")
-        existing_docs = get_all_documents()
-        if existing_docs:
-            st.write(f"**{len(existing_docs)}** documents in database")
-            for doc in existing_docs:
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.text(f"📄 {doc['filename']}")
-                with col2:
-                    if st.button("🗑️", key=f"del_{doc['filename']}"):
-                        delete_document(doc['filename'])
-                        # Rebuild FAISS index from remaining embeddings
-                        embeddings_matrix = get_all_embeddings()
-                        if embeddings_matrix.size > 0:
-                            new_index = build_index_from_matrix(embeddings_matrix)
-                            save_index(new_index, _INDEX_PATH)
-                        else:
-                            # No embeddings left, remove the index file
-                            if os.path.exists(_INDEX_PATH):
-                                os.remove(_INDEX_PATH)
-                        st.rerun()
-        else:
-            st.info("No documents in database")
-        st.markdown("---")
-    
     # Log out button
     if st.button("🚪 Log Out", use_container_width=True):
         for key in ["authenticated", "username", "role", "last_interaction"]:
@@ -1075,7 +1048,70 @@ else:
 
     # ══ TAB 6: Manage Corpus ════════════════════════════════════════════════════
     with tab_corpus:
-        render_incident_export_panel(flags)
+        st.subheader("🗃️ Corpus Management")
+        st.caption("View and delete indexed documents. Deleting a document removes it from the database and rebuilds the FAISS index.")
+        
+        # Fetch all documents from database
+        all_docs = get_all_documents()
+        
+        if not all_docs:
+            st.info("No documents in the corpus database.")
+        else:
+            # Prepare data for display with chunk counts
+            from src.db.corpus_db import get_document_chunks_count
+            
+            doc_data = []
+            for doc in all_docs:
+                chunk_count = get_document_chunks_count(doc['filename'])
+                doc_data.append({
+                    "Filename": doc['filename'],
+                    "File Hash": doc['file_hash'][:16] + "...",  # Show truncated hash
+                    "Upload Date": doc['upload_date'],
+                    "Class Section": doc['class_section'] or "N/A",
+                    "Student Name": doc['student_name'] or "N/A",
+                    "Assignment": doc['assignment_title'] or "N/A",
+                    "Chunk Count": chunk_count
+                })
+            
+            # Display as dataframe
+            docs_df = pd.DataFrame(doc_data)
+            st.dataframe(docs_df, use_container_width=True, hide_index=True)
+            
+            st.divider()
+            st.subheader("🗑️ Delete Documents")
+            st.caption("Select documents to delete from the corpus. This action cannot be undone.")
+            
+            # Delete document form
+            with st.form("delete_document_form"):
+                doc_to_delete = st.selectbox(
+                    "Select document to delete",
+                    options=[doc['filename'] for doc in all_docs],
+                    key="corpus_delete_select"
+                )
+                
+                delete_submitted = st.form_submit_button("Delete Document", type="secondary")
+                
+                if delete_submitted:
+                    with st.spinner(f"Deleting {doc_to_delete} and rebuilding FAISS index..."):
+                        try:
+                            # Delete document from database (cascades to chunks)
+                            delete_document(doc_to_delete)
+                            
+                            # Rebuild FAISS index from remaining embeddings
+                            embeddings_matrix = get_all_embeddings()
+                            if embeddings_matrix.size > 0:
+                                new_index = build_index_from_matrix(embeddings_matrix)
+                                save_index(new_index, _INDEX_PATH)
+                                st.success(f"✅ Document '{doc_to_delete}' deleted. FAISS index rebuilt with {new_index.ntotal} vectors.")
+                            else:
+                                # No embeddings left, remove the index file
+                                if os.path.exists(_INDEX_PATH):
+                                    os.remove(_INDEX_PATH)
+                                st.success(f"✅ Document '{doc_to_delete}' deleted. No documents remaining, FAISS index removed.")
+                            
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting document: {str(e)}")
 
     # ══ TAB 6: User Management ═══════════════════════════════════════════════════
     with tab_users:
