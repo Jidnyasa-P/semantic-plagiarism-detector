@@ -1,0 +1,174 @@
+"""Cross-lingual preprocessing for semantic plagiarism alignment.
+
+The original source text is never replaced.  Only ``embedding_text`` is
+translated to English so FAISS vectors for different languages share the same
+semantic space.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from typing import Callable, Iterable
+
+from langdetect import DetectorFactory, LangDetectException, detect
+
+from src.core.translator import translate_text
+
+# langdetect is non-deterministic by default. A fixed seed makes tests and
+# production behaviour repeatable.
+DetectorFactory.seed = 0
+
+ENGLISH_CODES = {"en"}
+MIN_DETECTION_CHARACTERS = 20
+
+
+@dataclass(frozen=True)
+class PreparedText:
+    """Original text plus the aligned text used to build an embedding."""
+
+    original_text: str
+    embedding_text: str
+    detected_language: str
+    translated: bool
+    translation_failed: bool = False
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a backwards-compatible dictionary for existing callers."""
+        return asdict(self)
+
+
+def _normalise_language_code(language: str | None) -> str:
+    code = (language or "unknown").strip().lower().replace("_", "-")
+    return code.split("-", 1)[0] or "unknown"
+
+
+def detect_language(text: str) -> str:
+    """Detect an ISO 639-1 language code.
+
+    Empty, very short, numeric, or otherwise undetectable text returns
+    ``"unknown"`` instead of raising an exception.
+    """
+    cleaned = " ".join(str(text or "").split())
+    if len(cleaned) < MIN_DETECTION_CHARACTERS:
+        return "unknown"
+
+    if not any(character.isalpha() for character in cleaned):
+        return "unknown"
+
+    try:
+        return _normalise_language_code(detect(cleaned))
+    except (LangDetectException, ValueError, TypeError):
+        return "unknown"
+
+
+def prepare_text_for_embedding(
+    text: str,
+    *,
+    detector: Callable[[str], str] | None = None,
+    translator: Callable[..., str] | None = None,
+) -> dict[str, object]:
+    """Prepare one source paragraph for English-aligned embedding.
+
+    Parameters are injectable to make behaviour deterministic in tests and to
+    avoid network translation calls during unit tests.
+
+    The returned ``original_text`` always matches the input.  When translation
+    fails, ``embedding_text`` safely falls back to the original text.
+    """
+    original_text = str(text or "")
+    if not original_text.strip():
+        return PreparedText(
+            original_text=original_text,
+            embedding_text=original_text,
+            detected_language="unknown",
+            translated=False,
+        ).to_dict()
+
+    detector_fn = detector or detect_language
+    translator_fn = translator or translate_text
+
+    try:
+        language = _normalise_language_code(detector_fn(original_text))
+    except Exception:
+        language = "unknown"
+
+    if language in ENGLISH_CODES or language == "unknown":
+        return PreparedText(
+            original_text=original_text,
+            embedding_text=original_text,
+            detected_language=language,
+            translated=False,
+        ).to_dict()
+
+    try:
+        translated_text = translator_fn(
+            original_text,
+            target_lang="en",
+            source_lang=language,
+        )
+    except TypeError:
+        # Backward compatibility with the repository's previous translator
+        # signature: translate_text(text, target_lang="en").
+        try:
+            translated_text = translator_fn(original_text, target_lang="en")
+        except Exception:
+            translated_text = ""
+    except Exception:
+        translated_text = ""
+
+    translated_text = str(translated_text or "").strip()
+    translation_failed = (
+        not translated_text
+        or translated_text.lower().startswith("(translation error")
+    )
+
+    if translation_failed:
+        return PreparedText(
+            original_text=original_text,
+            embedding_text=original_text,
+            detected_language=language,
+            translated=False,
+            translation_failed=True,
+        ).to_dict()
+
+    return PreparedText(
+        original_text=original_text,
+        embedding_text=translated_text,
+        detected_language=language,
+        translated=True,
+    ).to_dict()
+
+
+def prepare_chunks_for_embedding(
+    chunks: Iterable[str],
+) -> tuple[list[str], list[dict[str, object]]]:
+    """Prepare a sequence of chunks while preserving original display text.
+
+    Returns:
+        ``(embedding_chunks, metadata)`` where ``embedding_chunks`` contains
+        English-aligned text and ``metadata`` records language/translation state.
+    """
+    embedding_chunks: list[str] = []
+    metadata: list[dict[str, object]] = []
+
+    for chunk in chunks:
+        prepared = prepare_text_for_embedding(chunk)
+        embedding_chunks.append(str(prepared["embedding_text"]))
+        metadata.append(prepared)
+
+    return embedding_chunks, metadata
+
+
+def prepare_documents_for_embedding(
+    chunked_documents: dict[str, list[str]],
+) -> tuple[dict[str, list[str]], dict[str, list[dict[str, object]]]]:
+    """Prepare every document's chunks for embedding without mutating originals."""
+    translated_documents: dict[str, list[str]] = {}
+    alignment_metadata: dict[str, list[dict[str, object]]] = {}
+
+    for document_name, chunks in chunked_documents.items():
+        embedding_chunks, metadata = prepare_chunks_for_embedding(chunks)
+        translated_documents[document_name] = embedding_chunks
+        alignment_metadata[document_name] = metadata
+
+    return translated_documents, alignment_metadata

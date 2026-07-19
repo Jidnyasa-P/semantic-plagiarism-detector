@@ -1,23 +1,44 @@
-"""
-translator.py
--------------
-On-demand translation utility to align cross-lingual plagiarized matches into English.
-"""
+"""Translation utility for cross-lingual plagiarism alignment."""
+
+from __future__ import annotations
 
 from deep_translator import GoogleTranslator
 
 
-def translate_text(text: str, target_lang: str = "en") -> str:
+def translate_text(
+    text: str | None,
+    target_lang: str = "en",
+    source_lang: str = "auto",
+) -> str | None:
+    """Translate text while preserving the repository's public API.
+
+    Compatibility guarantees:
+    - ``None`` returns ``None``.
+    - An empty string returns an empty string.
+    - Provider/configuration failures return a human-readable string containing
+      ``"Translation Error"``.
+
+    The cross-lingual preprocessing layer detects that error prefix and falls
+    back to the original source text before embedding, so error messages never
+    contaminate FAISS vectors.
     """
-    Translate the given text to the target language (default: 'en') on-demand.
-    Automatically detects the source language.
-    """
-    if not text or not text.strip():
-        return text
-        
+    if text is None:
+        return None
+
+    original = str(text)
+    if not original.strip():
+        return original
+
     try:
-        return GoogleTranslator(source="auto", target=target_lang).translate(text)
-    except Exception as e:
-        print(f"[translator] Translation failed: {e}")
-        # Return fallback error indicator
-        return f"(Translation Error: Could not retrieve translation. Detail: {e})"
+        translated = GoogleTranslator(
+            source=source_lang or "auto",
+            target=target_lang,
+        ).translate(original)
+    except Exception as exc:
+        return f"(Translation Error: {exc})"
+
+    translated = str(translated or "").strip()
+    if not translated:
+        return f"(Translation Error: empty response for target '{target_lang}')"
+
+    return translated
