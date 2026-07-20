@@ -9,6 +9,7 @@ from src.core.document_parser import (
     extract_text_from_pdf,
     extract_text_from_docx,
     extract_text_from_txt,
+    strip_bibliography,
 )
 
 # Skip OCR tests when Tesseract binary is not present on this machine
@@ -124,3 +125,85 @@ def test_extract_texts_mixed():
 
     assert results["doc1.docx"] == "Parsed doc1.docx"
     assert results["doc2.txt"] == "Parsed doc2.txt"
+
+
+# ---------------------------------------------------------------------------
+# strip_bibliography tests (Issue #116)
+# ---------------------------------------------------------------------------
+
+class TestStripBibliography:
+
+    def test_strips_references_header(self):
+        text = "Some body text.\n\nReferences\n[1] Smith, 2020.\n[2] Jones, 2021."
+        result = strip_bibliography(text)
+        assert result == "Some body text."
+        assert "Smith" not in result
+
+    def test_strips_works_cited(self):
+        text = "Analysis complete.\n\nWorks Cited\nDoe, J. (2019). Paper."
+        result = strip_bibliography(text)
+        assert result == "Analysis complete."
+
+    def test_strips_bibliography_header(self):
+        text = "Conclusion drawn.\n\nBibliography\nAdams, B. Book."
+        result = strip_bibliography(text)
+        assert result == "Conclusion drawn."
+
+    def test_strips_citations_header(self):
+        text = "Findings discussed.\n\nCitations\nLee, 2018."
+        result = strip_bibliography(text)
+        assert result == "Findings discussed."
+
+    def test_strips_reference_list_header(self):
+        text = "Summary provided.\n\nReference List\nWang, 2022."
+        result = strip_bibliography(text)
+        assert result == "Summary provided."
+
+    def test_strips_sources_header(self):
+        text = "Method described.\n\nSources\nData from WHO."
+        result = strip_bibliography(text)
+        assert result == "Method described."
+
+    def test_case_insensitive(self):
+        text = "Body here.\n\nREFERENCES\n[1] entry."
+        result = strip_bibliography(text)
+        assert result == "Body here."
+
+    def test_preserves_normal_text(self):
+        text = (
+            "Introduction section with enough words to be meaningful.\n\n"
+            "Methodology describes the approach used in this study.\n\n"
+            "Results show significant improvement over baseline.\n\n"
+            "Conclusion summarizes key findings."
+        )
+        result = strip_bibliography(text)
+        assert result == text
+
+    def test_no_bibliography_unchanged(self):
+        text = "Just a plain document with no special headers at all."
+        assert strip_bibliography(text) == text
+
+    def test_empty_string(self):
+        assert strip_bibliography("") == ""
+
+    def test_inline_references_not_stripped(self):
+        text = "The references to prior work are important.\nMore text follows."
+        result = strip_bibliography(text)
+        assert result == text
+
+    def test_bibliography_not_at_start_of_line_not_stripped(self):
+        text = "The Bibliography section was reviewed.\nMore text."
+        result = strip_bibliography(text)
+        assert result == text
+
+    def test_extract_text_strips_bibliography_from_txt(self):
+        txt_bytes = b"Body text.\n\nReferences\n[1] Entry one."
+        result = extract_text(txt_bytes, "test.txt")
+        assert "References" not in result
+        assert "Body text" in result
+
+    def test_extract_text_strips_bibliography_from_docx(self):
+        docx_bytes = _make_docx_bytes("Body content.\n\nBibliography\nEntry one.")
+        result = extract_text(docx_bytes, "test.docx")
+        assert "Bibliography" not in result
+        assert "Body content" in result

@@ -39,6 +39,24 @@ def detect_text_language(text: str) -> str:
         return "unknown"
 
 
+_BIBLIOGRAPHY_HEADERS = re.compile(
+    r"^\s*(References|Works\s+Cited|Bibliography|Citations|Reference\s+List|Sources)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def strip_bibliography(text: str) -> str:
+    """Remove everything from the first bibliography header onward.
+
+    The header must appear on its own line (standalone) to avoid stripping
+    body text that merely mentions the word "References".
+    """
+    match = _BIBLIOGRAPHY_HEADERS.search(text)
+    if match:
+        return text[: match.start()].rstrip()
+    return text
+
+
 def prepare_text_for_embedding(text: str) -> dict:
     """
     Preserve the original text and prepare English text for embeddings.
@@ -451,10 +469,13 @@ def extract_text(
     extension = filename.rsplit(".", 1)[-1].lower()
 
     if extension == "pdf":
-        return extract_text_from_pdf(file, ocr_language=ocr_language, ocr_dpi=ocr_dpi)
-    if extension == "docx":
-        return extract_text_from_docx(file)
-    return extract_text_from_txt(file)
+        raw = extract_text_from_pdf(file, ocr_language=ocr_language, ocr_dpi=ocr_dpi)
+    elif extension == "docx":
+        raw = extract_text_from_docx(file)
+    else:
+        raw = extract_text_from_txt(file)
+
+    return strip_bibliography(raw)
 
 
 def extract_texts_from_pdfs(files: list) -> Dict[str, str]:
