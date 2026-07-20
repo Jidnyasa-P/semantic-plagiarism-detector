@@ -20,6 +20,71 @@ PDFInput = Union[str, bytes, io.BytesIO, BinaryIO]
 
 MIN_NATIVE_WORDS_PER_PAGE = 8
 DEFAULT_OCR_DPI = 250
+MIN_OCR_DPI = 150
+MAX_OCR_DPI = 400
+DEFAULT_OCR_LANGUAGE = "eng"
+
+# Tesseract language packs intentionally exposed by the administrator UI.
+# More values may be added later without changing the extraction API.
+SUPPORTED_OCR_LANGUAGES = {
+    "eng": "English",
+    "spa": "Spanish",
+    "fra": "French",
+}
+
+
+def validate_ocr_dpi(value: int) -> int:
+    """Validate and normalize an OCR rendering DPI value."""
+    if isinstance(value, bool):
+        raise ValueError("OCR DPI must be an integer between 150 and 400.")
+
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError("OCR DPI must be an integer between 150 and 400.")
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or not stripped.lstrip("+-").isdigit():
+            raise ValueError(
+                "OCR DPI must be an integer between 150 and 400."
+            )
+
+    try:
+        dpi = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "OCR DPI must be an integer between 150 and 400."
+        ) from exc
+
+    if not MIN_OCR_DPI <= dpi <= MAX_OCR_DPI:
+        raise ValueError(
+            f"OCR DPI must be between {MIN_OCR_DPI} and {MAX_OCR_DPI}."
+        )
+
+    return dpi
+
+
+def validate_ocr_language(value: str) -> str:
+    """Validate a Tesseract OCR language code exposed by the UI."""
+    language = str(value or "").strip().lower()
+
+    if language not in SUPPORTED_OCR_LANGUAGES:
+        supported = ", ".join(sorted(SUPPORTED_OCR_LANGUAGES))
+        raise ValueError(
+            f"Unsupported OCR language '{language or value}'. "
+            f"Supported values: {supported}."
+        )
+
+    return language
+
+
+def normalize_ocr_settings(
+    *,
+    language: str = DEFAULT_OCR_LANGUAGE,
+    dpi: int = DEFAULT_OCR_DPI,
+) -> tuple[str, int]:
+    """Return validated OCR language and DPI settings."""
+    return validate_ocr_language(language), validate_ocr_dpi(dpi)
+
 
 def detect_text_language(text: str) -> str:
     """
@@ -188,7 +253,7 @@ def _ocr_pdf_page(
     page_index: int,
     *,
     dpi: int = DEFAULT_OCR_DPI,
-    language: str = "eng",
+    language: str = DEFAULT_OCR_LANGUAGE,
 ) -> str:
     """Render one PDF page and extract text with Tesseract."""
     try:
@@ -291,7 +356,7 @@ def _extract_single_file_helper(
 def extract_texts_parallel(
     files_dict: Dict[str, bytes],
     *,
-    ocr_language: str = "eng",
+    ocr_language: str = DEFAULT_OCR_LANGUAGE,
     ocr_dpi: int = DEFAULT_OCR_DPI,
 ) -> tuple[Dict[str, str], Dict[str, Exception]]:
     """
@@ -300,6 +365,11 @@ def extract_texts_parallel(
     Returns:
         tuple of (results_dict, errors_dict)
     """
+    ocr_language, ocr_dpi = normalize_ocr_settings(
+        language=ocr_language,
+        dpi=ocr_dpi,
+    )
+
     results: Dict[str, str] = {}
     errors: Dict[str, Exception] = {}
 
@@ -340,7 +410,7 @@ def extract_texts_parallel(
 def extract_text_from_pdf(
     file: PDFInput,
     *,
-    ocr_language: str = "eng",
+    ocr_language: str = DEFAULT_OCR_LANGUAGE,
     ocr_dpi: int = DEFAULT_OCR_DPI,
 ) -> str:
     """Extract PDF text and OCR only pages with insufficient native text.
@@ -349,6 +419,11 @@ def extract_text_from_pdf(
     are handled page by page, allowing OCR results to enter the unchanged
     chunking, embedding and FAISS pipeline.
     """
+    ocr_language, ocr_dpi = normalize_ocr_settings(
+        language=ocr_language,
+        dpi=ocr_dpi,
+    )
+
     pdf_bytes = _read_pdf_bytes(file)
     page_lines: List[List[str]] = []
 
@@ -444,10 +519,15 @@ def extract_text(
     file: PDFInput,
     filename: str,
     *,
-    ocr_language: str = "eng",
+    ocr_language: str = DEFAULT_OCR_LANGUAGE,
     ocr_dpi: int = DEFAULT_OCR_DPI,
 ) -> str:
     """Route extraction according to a filename extension."""
+    ocr_language, ocr_dpi = normalize_ocr_settings(
+        language=ocr_language,
+        dpi=ocr_dpi,
+    )
+
     extension = filename.rsplit(".", 1)[-1].lower()
 
     if extension == "pdf":
