@@ -1,90 +1,57 @@
-import sys
-import os
-
+import sys, os
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-import hashlib  # noqa: E402
-import io as _io  # noqa: E402
-import json  # noqa: E402
-import time  # noqa: E402
-
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-import streamlit as st  # noqa: E402
-from app.theme import (  # noqa: E402
+import io as _io
+import time
+import numpy as np
+import pandas as pd
+import streamlit as st
+from app.theme import (
     get_theme_name,
     inject_css,
     set_theme,
 )
-from sklearn.metrics.pairwise import cosine_similarity  # noqa: E402
-from src.core.document_parser import (  # noqa: E402
+from sklearn.metrics.pairwise import cosine_similarity
+from typing import Any
+from utils.warning_list import render_warning_controls
+from src.core.text_chunking import chunk_documents
+from src.core.embedding_model import embed_documents
+from src.core.similarity import (
+    document_similarity_matrix, flag_plagiarism,
+    find_most_similar_chunks, PLAGIARISM_THRESHOLD,
+)
+
+
+from utils.warning_list import render_warning_controls
+from src.visualization.heatmap import plot_similarity_heatmap, plot_chunk_similarity_comparison
+from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks, save_index, load_index, build_index_from_matrix, ChunkRecord
+from src.visualization.network_graph import plot_similarity_network
+from src.core.webhook import send_plagiarism_alert
+from src.db import init_corpus_db, get_all_documents, delete_document, get_all_embeddings, get_chunk_registry, add_document, get_document_by_hash, add_chunks, get_unique_class_sections, get_documents_by_class
+from src.core.document_parser import (
+    DEFAULT_OCR_DPI,
+    DEFAULT_OCR_LANGUAGE,
     OCRDependencyError,
+    SUPPORTED_OCR_LANGUAGES,
     extract_text,
+    normalize_ocr_settings,
+    prepare_text_for_embedding,
 )
-from src.core.embedding_model import (  # noqa: E402
-    embed_documents,
-    get_embedding_model_info,
-)
-from src.core.faiss_index import (  # noqa: E402
-    build_index,
-    build_index_from_matrix,
-    find_plagiarised_chunks,
-    load_index,
-    save_index,
-    search_similar_chunks,
-)
-from src.core.similarity import (  # noqa: E402
-    PLAGIARISM_THRESHOLD,
-    document_similarity_matrix,
-    find_most_similar_chunks,
-    flag_plagiarism,
-)
-from src.core.text_chunking import chunk_documents  # noqa: E402
-from src.core.webhook import send_plagiarism_alert  # noqa: E402
-from src.db import (  # noqa: E402
-    add_chunks,
-    add_document,
-    delete_document,
-    get_all_documents,
-    get_all_embeddings,
-    get_chunk_registry,
-    get_document_by_hash,
-    get_documents_by_class,
-    get_unique_class_sections,
-    init_corpus_db,
-)
-from src.db.auth import (  # noqa: E402
-    add_user,
-    delete_user,
-    get_all_users,
-    get_user_role,
-    init_db,
-    update_password,
-    verify_user,
-)
-from src.utils.pdf_report import generate_plagiarism_report  # noqa: E402
-from src.visualization.heatmap import (  # noqa: E402
-    plot_chunk_similarity_comparison,
-    plot_similarity_heatmap,
-)
-from src.visualization.network_graph import plot_similarity_network  # noqa: E402
-from typing import Any  # noqa: E402
-from utils.warning_list import render_warning_controls  # noqa: E402
+import hashlib
 
 # Initialize corpus database
 init_corpus_db()
 
 # FAISS index file path
 _INDEX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "corpus.index"))
-
-# Branding config persistence
-_BRANDING_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_config.json"))
-_BRANDING_LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_logo.png"))
+from src.utils.pdf_report import generate_plagiarism_report
+from src.db.auth import init_db, verify_user, get_user_role, add_user, get_all_users, delete_user, update_password
 
 # Initialize database
 init_db()
+from src.db.auth import init_db, verify_user, get_user_role
 # Must be the first Streamlit command called
 st.set_page_config(
     page_title="Semantic Plagiarism Detector",
@@ -108,14 +75,7 @@ if "last_interaction" in st.session_state and st.session_state.get("authenticate
     elapsed_time = time.time() - st.session_state.last_interaction
     if elapsed_time > TIMEOUT_LIMIT:
         # Clear sensitive session variables on timeout
-        for key in [
-            "authenticated",
-            "username",
-            "role",
-            "last_interaction",
-            "analysis_results",
-            "analysis_file_signature",
-        ]:
+        for key in ["authenticated", "username", "role", "last_interaction"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.warning("⏱️ Your session has expired due to 15 minutes of inactivity. Please log in again.")
@@ -169,8 +129,6 @@ if not st.session_state.get("authenticated", False):
 # Get secure role for this active interaction
 user_role = st.session_state.get("role", "user")
 
-model_name, embedding_dim = get_embedding_model_info()
-
 # ── Sidebar (ROLE RESTRICTED Settings) ────────────────────────────────────────
 with st.sidebar:
     st.markdown("<div style='font-size: 72px; line-height: 1;'>🕵️‍♂️</div>", unsafe_allow_html=True)
@@ -197,13 +155,65 @@ with st.sidebar:
                               help="Cosine similarity above which a pair is flagged. (Recommended: 0.59 based on benchmark evaluation)")
         use_chunk_matrix = st.checkbox("Use chunk-level similarity matrix", value=False,
                                        help="Use MAX chunk-pair similarity instead of mean doc vectors.")
-        faiss_top_k = st.slider("FAISS: matches per chunk", 1, 20, value=5,
-                                help="Nearest neighbours per chunk in FAISS search.")
+        faiss_top_k = st.slider(
+            "FAISS: matches per chunk",
+            1,
+            20,
+            value=5,
+            help="Nearest neighbours per chunk in FAISS search.",
+        )
+
+        with st.expander("🔤 OCR Settings", expanded=False):
+            st.caption(
+                "Used only for scanned or image-only PDF pages. "
+                "Text-based PDFs continue to use native extraction."
+            )
+
+            ocr_language_labels = {
+                display_name: code
+                for code, display_name in SUPPORTED_OCR_LANGUAGES.items()
+            }
+            language_names = list(ocr_language_labels)
+
+            default_language_name = SUPPORTED_OCR_LANGUAGES[
+                DEFAULT_OCR_LANGUAGE
+            ]
+            selected_ocr_language_name = st.selectbox(
+                "OCR Language",
+                options=language_names,
+                index=language_names.index(default_language_name),
+                help=(
+                    "The matching Tesseract language pack must be installed "
+                    "on the operating system."
+                ),
+                key="ocr_language_selector",
+            )
+            ocr_language = ocr_language_labels[selected_ocr_language_name]
+
+            ocr_dpi = st.slider(
+                "OCR DPI Resolution",
+                min_value=150,
+                max_value=400,
+                value=DEFAULT_OCR_DPI,
+                step=25,
+                help=(
+                    "Higher DPI may improve recognition on small or blurred "
+                    "text, but uses more memory and processing time."
+                ),
+                key="ocr_dpi_slider",
+            )
+
+            st.caption(
+                f"Active OCR configuration: `{ocr_language}` at "
+                f"`{ocr_dpi} DPI`"
+            )
     else:
         # Fallbacks for Standard Users (Cannot alter thresholds or configs)
         threshold = PLAGIARISM_THRESHOLD
         use_chunk_matrix = False
         faiss_top_k = 5
+        ocr_language = DEFAULT_OCR_LANGUAGE
+        ocr_dpi = DEFAULT_OCR_DPI
         st.info("ℹ️ Settings configuration is restricted to Administrators.")
 
     st.markdown("---")
@@ -216,91 +226,45 @@ with st.sidebar:
         help="Filter the analysis dashboard and similarity matrices by a specific class section."
     )
 
-    # ── Report Branding (Admin only) ───────────────────────────────────────
-    if user_role == "admin":
-        st.markdown("---")
-        with st.expander("🎨 Report Branding", expanded=False):
-            st.caption("Customize PDF report appearance with your institution branding.")
-
-            def _load_branding_config() -> dict:
-                defaults = {"brand_color": "#1e3a8a", "logo_path": None}
-                try:
-                    if os.path.exists(_BRANDING_CONFIG_PATH):
-                        with open(_BRANDING_CONFIG_PATH, "r") as f:
-                            cfg = json.load(f)
-                        defaults.update(cfg)
-                except (json.JSONDecodeError, OSError):
-                    pass
-                return defaults
-
-            def _save_branding_config(cfg: dict) -> None:
-                with open(_BRANDING_CONFIG_PATH, "w") as f:
-                    json.dump(cfg, f, indent=2)
-
-            _branding_cfg = _load_branding_config()
-
-            brand_color = st.color_picker(
-                "Brand Color",
-                value=_branding_cfg.get("brand_color", "#1e3a8a"),
-                help="Applied to all PDF headers and section titles.",
-            )
-
-            logo_file = st.file_uploader(
-                "Institution Logo",
-                type=["png", "jpg", "jpeg"],
-                help="Logo appears in the PDF report header. Recommended: transparent PNG, max 300px wide.",
-            )
-
-            if logo_file is not None:
-                try:
-                    from PIL import Image as _PILImage
-                    import io as _img_io
-
-                    _img_bytes = logo_file.read()
-                    _img = _PILImage.open(_img_io.BytesIO(_img_bytes))
-                    max_w = 300
-                    if _img.width > max_w:
-                        ratio = max_w / _img.width
-                        _img = _img.resize((max_w, int(_img.height * ratio)), _PILImage.LANCZOS)
-                    buf = _img_io.BytesIO()
-                    _img.save(buf, format="PNG")
-                    logo_bytes = buf.getvalue()
-                    st.image(logo_bytes, width=150, caption="Logo preview")
-                    with open(_BRANDING_LOGO_PATH, "wb") as f:
-                        f.write(logo_bytes)
-                except Exception:
-                    logo_bytes = logo_file.getvalue()
-                    st.image(logo_bytes, width=150, caption="Logo preview")
-                    with open(_BRANDING_LOGO_PATH, "wb") as f:
-                        f.write(logo_bytes)
-                _branding_cfg["logo_path"] = _BRANDING_LOGO_PATH
-            elif os.path.exists(_BRANDING_LOGO_PATH):
-                _branding_cfg["logo_path"] = _BRANDING_LOGO_PATH
-            else:
-                _branding_cfg["logo_path"] = None
-
-            _branding_cfg["brand_color"] = brand_color
-            _save_branding_config(_branding_cfg)
-
-            st.session_state["brand_color"] = brand_color
-            st.session_state["logo_path"] = _branding_cfg.get("logo_path")
-
     st.markdown("---")
     st.markdown("""
 **How it works**
 1. Upload **PDF, DOCX, or TXT** assignment files
 2. Text is extracted according to the file type
 3. Text is split into **paragraph chunks**
-4. Chunks are embedded with **{model_name}**
+4. Chunks are embedded with **all-MiniLM-L6-v2**
 5. A **FAISS index** is built over all chunk vectors
 6. Pairs above the threshold are flagged
 """)
-    st.info(
-    f"**Active Model:** {model_name}\n\n"
-    f"**Dimension:** {embedding_dim}"
-)
     st.markdown("---")
     st.caption("Semantic Plagiarism Detector · FAISS edition")
+    
+    # Document management (admin only)
+    if user_role == "admin":
+        st.markdown("### 📁 Document Management")
+        existing_docs = get_all_documents()
+        if existing_docs:
+            st.write(f"**{len(existing_docs)}** documents in database")
+            for doc in existing_docs:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(f"📄 {doc['filename']}")
+                with col2:
+                    if st.button("🗑️", key=f"del_{doc['filename']}"):
+                        delete_document(doc['filename'])
+                        # Rebuild FAISS index from remaining embeddings
+                        embeddings_matrix = get_all_embeddings()
+                        if embeddings_matrix.size > 0:
+                            new_index = build_index_from_matrix(embeddings_matrix)
+                            save_index(new_index, _INDEX_PATH)
+                        else:
+                            # No embeddings left, remove the index file
+                            if os.path.exists(_INDEX_PATH):
+                                os.remove(_INDEX_PATH)
+                        st.rerun()
+        else:
+            st.info("No documents in database")
+        st.markdown("---")
     
     # Log out button
     if st.button("🚪 Log Out", use_container_width=True):
@@ -406,6 +370,14 @@ if user_role != "admin":
                 st.info("Please ensure documents have been indexed by an administrator.")
 else:
     # ADMINISTRATOR ACCESS: Full Upload Pipeline & Evaluation Dashboards
+    try:
+        ocr_language, ocr_dpi = normalize_ocr_settings(
+            language=ocr_language,
+            dpi=ocr_dpi,
+        )
+    except ValueError as exc:
+        st.error(f"Invalid OCR configuration: {exc}")
+        st.stop()
     
     # Load or initialize FAISS index
     if os.path.exists(_INDEX_PATH):
@@ -430,13 +402,13 @@ else:
     )
 
     
-    # Use getvalue() so uploaded bytes remain available on every Streamlit rerun.
-    # Calling read() advances the UploadedFile stream and can return empty bytes
-    # after changing a tab, selectbox, checkbox, or slider.
     file_bytes_dict = {
-        uploaded_file.name: uploaded_file.getvalue()
-        for uploaded_file in uploaded_files
-    }
+    uploaded_file.name: uploaded_file.getvalue()
+    for uploaded_file in uploaded_files}
+    if uploaded_files:
+        for f in uploaded_files:
+            file_bytes_dict[f.name] = f.read()
+            f.seek(0)
     
     # Allow analysis with existing index even without new uploads
     if not uploaded_files or len(uploaded_files) < 2:
@@ -563,6 +535,8 @@ else:
     @st.cache_data(show_spinner=False)
     def run_pipeline(
         file_bytes_dict: dict[str, bytes],
+        ocr_language: str,
+        ocr_dpi: int,
         existing_index=None,
         existing_registry=None,
     ):
@@ -574,7 +548,12 @@ else:
         # Process every uploaded file and collect OCR failures from scanned PDFs.
         for name, data in file_bytes_dict.items():
             try:
-                raw_texts[name] = extract_text(_io.BytesIO(data), name)
+                raw_texts[name] = extract_text(
+                    _io.BytesIO(data),
+                    name,
+                    ocr_language=ocr_language,
+                    ocr_dpi=ocr_dpi,
+                )
             except OCRDependencyError as exc:
                 failed_files.append(name)
                 failure_details.append(f"{name}: {exc}")
@@ -586,11 +565,16 @@ else:
         chunked_docs = chunk_documents(raw_texts)
 
         # Translated English chunks are used only for embeddings.
-        from src.core.cross_lingual import prepare_documents_for_embedding
+        translated_chunked_docs = {}
 
-        translated_chunked_docs, alignment_metadata = (
-            prepare_documents_for_embedding(chunked_docs)
-        )
+        for doc_name, chunks in chunked_docs.items():
+            translated_chunked_docs[doc_name] = []
+
+            for chunk in chunks:
+                prepared = prepare_text_for_embedding(chunk)
+                translated_chunked_docs[doc_name].append(
+                    prepared["embedding_text"]
+                )
 
         # Generate embeddings from translated English text.
         embeddings = embed_documents(translated_chunked_docs)
@@ -641,175 +625,175 @@ else:
         )
 
 
-    # ── Persistent analysis state ────────────────────────────────────────────────
-    # Streamlit reruns the full script whenever a widget changes. Keep the
-    # completed pipeline outputs in session_state so tab and selectbox changes do
-    # not reset document counts, similarity matrices, flags, or FAISS metrics.
-    file_signature = tuple(
-        sorted(
-            (
-                name,
-                len(data),
-                hashlib.sha256(data).hexdigest(),
-            )
-            for name, data in file_bytes_dict.items()
+    # Filter already-uploaded files, but do not save new files to the database
+    # until PDF extraction and the complete pipeline succeed.
+    new_files = {}
+    skipped_files = []
+
+    for uploaded_file in uploaded_files:
+        file_data = uploaded_file.getvalue()
+        file_hash = hashlib.sha256(file_data).hexdigest()
+        existing = get_document_by_hash(file_hash)
+
+        if existing:
+            skipped_files.append(uploaded_file.name)
+        else:
+            new_files[uploaded_file.name] = {
+                "data": file_data,
+                "hash": file_hash,
+            }
+    if skipped_files:
+        st.info(
+            f"⏭️ Skipped {len(skipped_files)} already-uploaded files: "
+            f"{', '.join(skipped_files)}"
         )
-    )
 
-    analysis_is_current = (
-        st.session_state.analysis_results is not None
-        and st.session_state.analysis_file_signature == file_signature
-    )
+    if not new_files:
+        st.warning(
+            "No new files to upload. All uploaded files are already "
+            "in the database."
+        )
+        if faiss_index is None:
+            st.stop()
+        # Continue with the existing index for analysis.
+    else:
+        st.info(f"📤 Processing {len(new_files)} new files...")
 
-    if not analysis_is_current:
+        pipeline_files = {
+            name: file_info["data"]
+            for name, file_info in new_files.items()
+        }
+
         try:
             with st.spinner(
-                "🧠 Processing PDFs, building embeddings and FAISS index…"
+                "🧠 Processing new files, building embeddings and FAISS index…"
             ):
-                analysis_results = run_pipeline(file_bytes_dict)
+                (
+                    raw_texts_new,
+                    chunked_docs_new,
+                    embeddings_new,
+                    sim_df_new,
+                    chunk_sim_df_new,
+                    faiss_index_new,
+                    registry_new,
+                ) = run_pipeline(
+                    pipeline_files,
+                    ocr_language,
+                    ocr_dpi,
+                )
+
         except OCRDependencyError as exc:
             failed_files = getattr(
                 exc,
                 "failed_files",
-                list(file_bytes_dict.keys()),
+                list(pipeline_files.keys()),
             )
+
             show_ocr_dependency_error(
                 failed_files=failed_files,
                 error_message=str(exc),
             )
             st.stop()
 
-        (
-            raw_texts,
-            chunked_docs,
-            embeddings,
-            sim_df,
-            chunk_sim_df,
-            faiss_index,
-            registry,
-        ) = analysis_results
-
-        st.session_state.analysis_results = analysis_results
-        st.session_state.analysis_file_signature = file_signature
-
-        # Persist only documents that are not already stored. Database duplicate
-        # detection must not decide whether dashboard data remains visible.
-        saved_documents = 0
-        skipped_documents = []
-
-        for uploaded_file in uploaded_files:
-            file_data = file_bytes_dict[uploaded_file.name]
-            file_hash = hashlib.sha256(file_data).hexdigest()
-            existing = get_document_by_hash(file_hash)
-
-            if existing:
-                skipped_documents.append(uploaded_file.name)
-                continue
-
-            meta = metadata_dict.get(
-                uploaded_file.name,
-                {
-                    "student_name": "",
-                    "class_section": "",
-                    "assignment_title": "",
-                },
-            )
-
+        # The complete pipeline succeeded, so the documents can now be stored.
+        for doc_name, file_info in new_files.items():
+            meta = metadata_dict.get(doc_name, {"student_name": "", "class_section": "", "assignment_title": ""})
             add_document(
-                uploaded_file.name,
-                file_hash,
+                doc_name,
+                file_info["hash"],
                 class_section=meta["class_section"],
                 student_name=meta["student_name"],
-                assignment_title=meta["assignment_title"],
+                assignment_title=meta["assignment_title"]
             )
 
-            doc_embeddings = embeddings.get(uploaded_file.name)
-            doc_chunks = chunked_docs.get(uploaded_file.name, [])
+        # If an index already exists, append the new vectors.
+        if faiss_index is not None:
+            all_vectors = []
+            all_registry = registry.copy()
 
-            if (
-                doc_embeddings is not None
-                and getattr(doc_embeddings, "ndim", 0) == 2
-                and doc_embeddings.shape[0] > 0
-            ):
-                chunks_to_add = []
+            for doc_name, emb in embeddings_new.items():
+                chunks = chunked_docs_new.get(doc_name, [])
+                if emb.ndim != 2 or emb.shape[0] == 0:
+                    continue
 
-                # The database stores a globally unique vector/index identifier.
-                existing_registry_size = len(get_chunk_registry())
-                for chunk_index, (vector, chunk_text) in enumerate(
-                    zip(doc_embeddings, doc_chunks)
-                ):
-                    chunks_to_add.append(
-                        (
-                            existing_registry_size + chunk_index,
-                            uploaded_file.name,
-                            chunk_index,
-                            chunk_text,
-                            vector,
-                        )
+                for i, (vec, chunk_text) in enumerate(zip(emb, chunks)):
+                    all_vectors.append(vec.astype("float32"))
+                    all_registry.append(
+                        ChunkRecord(doc_name, i, chunk_text)
                     )
 
-                if chunks_to_add:
-                    add_chunks(chunks_to_add)
+            if all_vectors:
+                matrix = np.vstack(all_vectors)
+                faiss_index.add(matrix)  # type: ignore[arg-type]
+                registry = all_registry
+                st.success(
+                    f"✅ Added {len(all_vectors)} new vectors to existing index"
+                )
+            raw_texts = raw_texts_new
+            chunked_docs = chunked_docs_new
+            embeddings = embeddings_new
+            sim_df = sim_df_new
+            chunk_sim_df = chunk_sim_df_new
+        else:
+            # No existing index: use the newly generated data.
+            faiss_index = faiss_index_new
+            registry = registry_new
 
-            saved_documents += 1
+        # Always set pipeline variables from the new results
+        raw_texts = raw_texts_new
+        chunked_docs = chunked_docs_new
+        embeddings = embeddings_new
+        sim_df = sim_df_new
+        chunk_sim_df = chunk_sim_df_new
 
-        if skipped_documents:
-            st.info(
-                f"⏭️ Already stored in the database: "
-                f"{', '.join(skipped_documents)}"
+        # Save the updated FAISS index.
+        save_index(faiss_index, _INDEX_PATH)
+
+        # Store chunks in the database for persistence.
+        for doc_name, emb in embeddings_new.items():
+            chunks = chunked_docs_new.get(doc_name, [])
+            if emb.ndim != 2 or emb.shape[0] == 0:
+                continue
+
+            start_id = len(
+                [record for record in registry if record.doc_name != doc_name]
             )
+            chunks_to_add = []
 
-        if saved_documents:
-            st.success(
-                f"✅ Added {saved_documents} new document"
-                f"{'s' if saved_documents != 1 else ''} to the database."
-            )
+            for i, (vec, chunk_text) in enumerate(zip(emb, chunks)):
+                chunks_to_add.append(
+                    (start_id + i, doc_name, i, chunk_text, vec)
+                )
 
-        # Save the current analysis index. The in-memory analysis remains the
-        # source of truth for this upload set throughout the Streamlit session.
-        if faiss_index is not None:
-            save_index(faiss_index, _INDEX_PATH)
-
+            add_chunks(chunks_to_add)
+    # If we have an existing index but no new files, load existing data
+    if faiss_index is not None and not new_files:
+        # For now, we need to rebuild the full pipeline for similarity matrix
+        # This is a limitation - we'd need to store raw_texts in DB to avoid this
+        st.warning("⚠️ Similarity matrix requires re-uploading files. FAISS search is available with existing index.")
+        # For full functionality, require uploads
+        if not new_files:
+            st.info("Please upload files to generate similarity matrix. FAISS search is available below.")
+            # We'll allow FAISS search but skip the matrix
+            raw_texts = {}
+            chunked_docs = {}
+            embeddings = {}
+            sim_df = None
+            chunk_sim_df = None
+            active_sim_df = None
+            flags = []
     else:
-        (
-            raw_texts,
-            chunked_docs,
-            embeddings,
-            sim_df,
-            chunk_sim_df,
-            faiss_index,
-            registry,
-        ) = st.session_state.analysis_results
+        # Check for files from which no usable text could be extracted
+        empty_docs = [name for name, text in raw_texts.items() if not text.strip()]
+        if empty_docs:
+            st.warning(
+                f"⚠️ **Could not extract text from:** {', '.join(empty_docs)}. "
+                "The files may be empty, unsupported, scanned, corrupted, "
+                "or password-protected."
+            )
 
-    # Optional explicit reset. Normal widget changes must never clear analysis.
-    if st.button(
-        "🗑️ Clear current analysis",
-        key="clear_current_analysis",
-        help="Clear the current upload analysis and start with a new set of files.",
-    ):
-        st.session_state.analysis_results = None
-        st.session_state.analysis_file_signature = None
-        run_pipeline.clear()
-        st.rerun()
-
-    empty_docs = [
-        name
-        for name, extracted_text in raw_texts.items()
-        if not extracted_text.strip()
-    ]
-    if empty_docs:
-        st.warning(
-            f"⚠️ **Could not extract text from:** {', '.join(empty_docs)}. "
-            "The files may be empty, unsupported, scanned, corrupted, "
-            "or password-protected."
-        )
-
-    active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
-    flags = (
-        flag_plagiarism(active_sim_df, threshold=threshold)
-        if active_sim_df is not None
-        else []
-    )
+        active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
+        flags         = flag_plagiarism(active_sim_df, threshold=threshold)
 
     # Apply Class/Section filter if selected
     if selected_class != "All Classes":
@@ -836,14 +820,8 @@ else:
         st.session_state.notified_pairs = set()
     
     if active_sim_df is not None:
-        # Use the currently analysed upload set. The previous implementation
-        # referenced `new_files`, but that variable no longer exists after the
-        # session-persistence refactor.
-        current_files = sorted(raw_texts.keys())
-        if (
-            "last_uploaded_files" not in st.session_state
-            or st.session_state.last_uploaded_files != current_files
-        ):
+        current_files = sorted(list(new_files.keys()))
+        if "last_uploaded_files" not in st.session_state or st.session_state.last_uploaded_files != current_files:
             st.session_state.last_uploaded_files = current_files
             st.session_state.notified_pairs = set()
 
@@ -870,23 +848,16 @@ else:
     col3.metric("🚨 Flagged",     n_flagged,
                 delta=f"{n_high} High" if n_high else None, delta_color="inverse")
     col4.metric("📈 Avg Similarity", f"{avg_sim:.1%}")
-    col5.metric(
-        "🗂️ FAISS Vectors",
-        faiss_index.ntotal if faiss_index is not None else 0,
-    )
+    col5.metric("🗂️ FAISS Vectors", faiss_index.ntotal)
     st.divider()
 
     # ── Tabs ──────────────────────────────────────────────────────────────────────
-    (
-        tab_warnings, tab_faiss, tab_matrix, tab_heatmap,
-        tab_drill, tab_corpus, tab_users,
-    ) = st.tabs([
+    tab_warnings, tab_faiss, tab_matrix, tab_heatmap, tab_drill, tab_users = st.tabs([
         "⚠️ Plagiarism Warnings",
         "⚡ FAISS Chunk Search",
         "📋 Similarity Matrix",
         "🗺️ Heatmap",
         "🔬 Pair Drill-Down",
-        "🗃️ Manage Corpus",
         "👥 User Management",
     ])
 
@@ -987,11 +958,9 @@ else:
                     ):
                         cq, cm = st.columns(2)
                         with cq:
-                            st.markdown("**Your query:**")
-                            st.info(query_text.strip())
+                            st.markdown("**Your query:**"); st.info(query_text.strip())
                         with cm:
-                            st.markdown(f"**Match in {record.doc_name}:**")
-                            st.warning(record.chunk_text)
+                            st.markdown(f"**Match in {record.doc_name}:**"); st.warning(record.chunk_text)
 
     # ══ TAB 3 ════════════════════════════════════════════════════════════════════
     with tab_matrix:
@@ -1001,10 +970,8 @@ else:
         else:
             def _highlight(val: Any) -> str:
                 numeric_val = float(val)
-                if numeric_val >= 0.90:
-                    return "background-color:#ff4b4b;color:white;font-weight:bold;"
-                elif numeric_val >= threshold:
-                    return "background-color:#ffa500;color:white;font-weight:bold;"
+                if numeric_val >= 0.90:         return "background-color:#ff4b4b;color:white;font-weight:bold;"
+                elif numeric_val >= threshold:  return "background-color:#ffa500;color:white;font-weight:bold;"
                 return ""
             styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
             st.dataframe(styled_df, use_container_width=True)
@@ -1075,15 +1042,9 @@ else:
             st.warning("Need at least 2 documents.")
         else:
             c1, c2 = st.columns(2)
-            with c1:
-                doc_a = st.selectbox("Document A", doc_names, index=0, key="da")
-            with c2:
-                doc_b = st.selectbox(
-                    "Document B",
-                    [d for d in doc_names if d != doc_a],
-                    index=0,
-                    key="db"
-                )
+            with c1: doc_a = st.selectbox("Document A", doc_names, index=0, key="da")
+            with c2: doc_b = st.selectbox("Document B",
+                                           [d for d in doc_names if d != doc_a], index=0, key="db")
 
             score = float(active_sim_df.loc[doc_a, doc_b])
             score_color = "#ff4b4b" if score >= 0.9 else ("#ffa500" if score >= threshold else "#21c55d")
@@ -1113,12 +1074,8 @@ else:
                     for rank, (ca, cb, sim) in enumerate(top_pairs, 1):
                         with st.expander(f"#{rank} — Similarity: {sim:.1%}", expanded=(rank == 1)):
                             col1, col2 = st.columns(2)
-                            with col1:
-                                st.markdown(f"**From {doc_a}**")
-                                st.info(ca)
-                            with col2:
-                                st.markdown(f"**From {doc_b}**")
-                                st.warning(cb)
+                            with col1: st.markdown(f"**From {doc_a}**"); st.info(ca)
+                            with col2: st.markdown(f"**From {doc_b}**"); st.warning(cb)
                     
                     st.divider()
                     st.subheader("📄 Generate PDF Report")
@@ -1127,20 +1084,13 @@ else:
                     if st.button("📥 Generate PDF Report", type="primary", use_container_width=True, key="pdf_report"):
                         with st.spinner("Generating PDF report..."):
                             try:
-                                _logo_bytes = None
-                                _logo_path = st.session_state.get("logo_path")
-                                if _logo_path and os.path.exists(_logo_path):
-                                    with open(_logo_path, "rb") as _lf:
-                                        _logo_bytes = _lf.read()
                                 pdf_buffer = generate_plagiarism_report(
                                     doc_a=doc_a,
                                     doc_b=doc_b,
                                     overall_similarity=score,
                                     threshold=threshold,
                                     top_pairs=top_pairs,
-                                    report_title="Plagiarism Detection Report",
-                                    logo_image=_logo_bytes,
-                                    brand_color=st.session_state.get("brand_color"),
+                                    report_title="Plagiarism Detection Report"
                                 )
                                 st.download_button(
                                     label="⬇️ Download PDF Report",
@@ -1162,73 +1112,6 @@ else:
                 with t2:
                     st.markdown(f"**{doc_b}**")
                     st.text_area("", raw_texts.get(doc_b, "(empty)"), height=300, key="tb")
-
-    # ══ TAB 6: Manage Corpus ════════════════════════════════════════════════════
-    with tab_corpus:
-        st.subheader("🗃️ Corpus Management")
-        st.caption("View and delete indexed documents. Deleting a document removes it from the database and rebuilds the FAISS index.")
-        
-        # Fetch all documents from database
-        all_docs = get_all_documents()
-        
-        if not all_docs:
-            st.info("No documents in the corpus database.")
-        else:
-            # Prepare data for display with chunk counts
-            from src.db.corpus_db import get_document_chunks_count
-            
-            doc_data = []
-            for doc in all_docs:
-                chunk_count = get_document_chunks_count(doc['filename'])
-                doc_data.append({
-                    "Filename": doc['filename'],
-                    "File Hash": doc['file_hash'][:16] + "...",  # Show truncated hash
-                    "Upload Date": doc['upload_date'],
-                    "Class Section": doc['class_section'] or "N/A",
-                    "Student Name": doc['student_name'] or "N/A",
-                    "Assignment": doc['assignment_title'] or "N/A",
-                    "Chunk Count": chunk_count
-                })
-            
-            # Display as dataframe
-            docs_df = pd.DataFrame(doc_data)
-            st.dataframe(docs_df, use_container_width=True, hide_index=True)
-            
-            st.divider()
-            st.subheader("🗑️ Delete Documents")
-            st.caption("Select documents to delete from the corpus. This action cannot be undone.")
-            
-            # Delete document form
-            with st.form("delete_document_form"):
-                doc_to_delete = st.selectbox(
-                    "Select document to delete",
-                    options=[doc['filename'] for doc in all_docs],
-                    key="corpus_delete_select"
-                )
-                
-                delete_submitted = st.form_submit_button("Delete Document", type="secondary")
-                
-                if delete_submitted:
-                    with st.spinner(f"Deleting {doc_to_delete} and rebuilding FAISS index..."):
-                        try:
-                            # Delete document from database (cascades to chunks)
-                            delete_document(doc_to_delete)
-                            
-                            # Rebuild FAISS index from remaining embeddings
-                            embeddings_matrix = get_all_embeddings()
-                            if embeddings_matrix.size > 0:
-                                new_index = build_index_from_matrix(embeddings_matrix)
-                                save_index(new_index, _INDEX_PATH)
-                                st.success(f"✅ Document '{doc_to_delete}' deleted. FAISS index rebuilt with {new_index.ntotal} vectors.")
-                            else:
-                                # No embeddings left, remove the index file
-                                if os.path.exists(_INDEX_PATH):
-                                    os.remove(_INDEX_PATH)
-                                st.success(f"✅ Document '{doc_to_delete}' deleted. No documents remaining, FAISS index removed.")
-                            
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error deleting document: {str(e)}")
 
     # ══ TAB 6: User Management ═══════════════════════════════════════════════════
     with tab_users:
