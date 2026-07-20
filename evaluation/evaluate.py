@@ -72,7 +72,7 @@ def compute_semantic_similarities(pairs: list) -> np.ndarray:
     # Row-wise cosine similarity (not full N×N — just the diagonal pairs)
     similarities = np.array(
         [
-            float(sklearn_cosine(emb_a[i : i + 1], emb_b[i : i + 1])[0, 0])
+            float(sklearn_cosine(emb_a[i: i + 1], emb_b[i: i + 1])[0, 0])
             for i in range(len(pairs))
         ]
     )

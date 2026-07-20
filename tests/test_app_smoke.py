@@ -29,7 +29,7 @@ def generate_pdf(text: str) -> bytes:
     words = text.split()
     lines = []
     for i in range(0, len(words), 8):
-        lines.append(" ".join(words[i : i + 8]))
+        lines.append(" ".join(words[i: i + 8]))
 
     y = 750
     for line in lines:
