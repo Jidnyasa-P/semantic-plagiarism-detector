@@ -550,6 +550,94 @@ def extract_text_from_txt(file: PDFInput) -> str:
     return text.strip()
 
 
+# --- Markdown (.md) support -------------------------------------------------
+#
+# Markdown files are plain text, so we reuse the TXT reading logic to get the
+# raw source, then strip common Markdown syntax so only the readable content
+# reaches the semantic-analysis / embedding pipeline. Fenced code blocks are
+# kept (with the fence markers removed) since code can still be relevant
+# content for plagiarism comparison; only the surrounding syntax is removed.
+
+_MD_FENCE = re.compile(r"^\s*(```|~~~)")
+_MD_ATX_HEADER = re.compile(r"^\s{0,3}#{1,6}\s+")
+_MD_SETEXT_HEADER = re.compile(r"^\s{0,3}(=+|-+)\s*$")
+_MD_BLOCKQUOTE = re.compile(r"^\s{0,3}>\s?")
+_MD_HR = re.compile(r"^\s{0,3}([-*_])(\s*\1){2,}\s*$")
+_MD_UNORDERED_LIST = re.compile(r"^(\s*)[-*+]\s+")
+_MD_ORDERED_LIST = re.compile(r"^(\s*)\d+[.)]\s+")
+_MD_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+_MD_INLINE_CODE = re.compile(r"`([^`]*)`")
+_MD_BOLD_ITALIC = re.compile(r"(\*\*\*|___)(.+?)\1")
+_MD_BOLD = re.compile(r"(\*\*|__)(.+?)\1")
+_MD_ITALIC = re.compile(r"(\*|_)(.+?)\1")
+_MD_STRIKETHROUGH = re.compile(r"~~(.+?)~~")
+
+
+def _strip_inline_markdown(line: str) -> str:
+    """Remove inline Markdown emphasis, links, images, and inline code marks."""
+    line = _MD_IMAGE.sub(r"\1", line)
+    line = _MD_LINK.sub(r"\1", line)
+    line = _MD_BOLD_ITALIC.sub(r"\2", line)
+    line = _MD_BOLD.sub(r"\2", line)
+    line = _MD_ITALIC.sub(r"\2", line)
+    line = _MD_STRIKETHROUGH.sub(r"\1", line)
+    line = _MD_INLINE_CODE.sub(r"\1", line)
+    return line
+
+
+def strip_markdown_syntax(raw_text: str) -> str:
+    """Convert raw Markdown source into plain readable text.
+
+    Fenced code block contents are preserved as-is (fence markers removed);
+    headers, lists, blockquotes, horizontal rules, links, images, and
+    emphasis markers are stripped down to their underlying text.
+    """
+    lines = raw_text.splitlines()
+    output: List[str] = []
+    in_code_block = False
+
+    for line in lines:
+        if _MD_FENCE.match(line):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            output.append(line)
+            continue
+
+        if _MD_HR.match(line):
+            continue
+
+        if _MD_SETEXT_HEADER.match(line) and output and output[-1].strip():
+            # Setext header underline (=== or ---) following a text line.
+            continue
+
+        line = _MD_ATX_HEADER.sub("", line)
+        line = _MD_BLOCKQUOTE.sub("", line)
+        line = _MD_UNORDERED_LIST.sub(r"\1", line)
+        line = _MD_ORDERED_LIST.sub(r"\1", line)
+        line = _strip_inline_markdown(line)
+
+        output.append(line)
+
+    text = "\n".join(output)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def extract_text_from_md(file: PDFInput) -> str:
+    """Extract plain text from a Markdown (.md) file.
+
+    Reads the raw Markdown source (reusing the TXT reader) and strips
+    Markdown syntax so downstream chunking/embedding sees clean prose.
+    """
+    raw_text = extract_text_from_txt(file)
+    if not raw_text:
+        return ""
+    return strip_markdown_syntax(raw_text)
+
+
 def extract_text(
     file: PDFInput,
     filename: str,
@@ -569,6 +657,8 @@ def extract_text(
         raw = extract_text_from_pdf(file, ocr_language=ocr_language, ocr_dpi=ocr_dpi)
     elif extension == "docx":
         raw = extract_text_from_docx(file)
+    elif extension == "md":
+        raw = extract_text_from_md(file)
     else:
         raw = extract_text_from_txt(file)
 
@@ -611,3 +701,4 @@ def extract_texts(files: list) -> Dict[str, str]:
 # Cross-lingual embedding preparation (Issue #46)
 # Re-exported here because parsing is the boundary where raw source text is
 # converted into embedding-ready text.
+
