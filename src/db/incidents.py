@@ -83,7 +83,18 @@ def init_incident_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
             conn.rollback()
             raise sqlite3.Error(f"Failed to initialize incident database: {e}") from e
 
+def _fetch_all_incidents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """
+        SELECT incident_id, document_a, document_b, similarity_score,
+               severity_rank, review_status, date_flagged, last_seen
+        FROM plagiarism_incidents
+        ORDER BY date_flagged DESC, incident_id ASC
+        """
+    ).fetchall()
 
+    return [dict(row) for row in rows]
 def sync_flagged_incidents(
     flags: Iterable[Mapping[str, Any]],
     db_path: str | Path = DEFAULT_DB_PATH,
@@ -130,6 +141,7 @@ def sync_flagged_incidents(
                     ),
                 )
 
+
             conn.commit()
 
             rows = conn.execute(
@@ -148,22 +160,32 @@ def sync_flagged_incidents(
             conn.rollback()
             raise sqlite3.Error(f"Failed to synchronize incidents: {e}") from e
 
+                VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?)
+                ON CONFLICT(incident_id) DO UPDATE SET
+                    similarity_score = excluded.similarity_score,
+                    severity_rank = excluded.severity_rank,
+                    last_seen = excluded.last_seen
+                """,
+                (
+                    build_incident_id(first, second),
+                    first,
+                    second,
+                    _normalise_score(flag.get("similarity", 0.0)),
+                    _severity_rank(flag),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+        conconn.commit()
+        return _fetch_all_incidents(conn)
+
 
 def get_all_incidents(
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> list[dict[str, Any]]:
     init_incident_db(db_path)
     with closing(sqlite3.connect(str(db_path))) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT incident_id, document_a, document_b, similarity_score,
-                   severity_rank, review_status, date_flagged, last_seen
-            FROM plagiarism_incidents
-            ORDER BY date_flagged DESC, incident_id ASC
-            """
-        ).fetchall()
-    return [dict(row) for row in rows]
+       return _fetch_all_incidents(conn)
 
 
 def update_review_status(
