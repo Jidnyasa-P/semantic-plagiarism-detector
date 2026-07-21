@@ -46,7 +46,7 @@ from src.core.faiss_index import (
     find_plagiarised_chunks,
     search_similar_chunks,
     save_index,
-    load_index,
+    load_or_rebuild_index,
     build_index_from_matrix,
 )
 from src.core.webhook import send_plagiarism_alert
@@ -101,6 +101,10 @@ from src.db.auth import (
     get_tour_completed,
     set_tour_completed,
 )
+try:
+    from src.utils.excel_export import export_similarity_matrix_to_excel
+except ImportError:
+    from utils.excel_export import export_similarity_matrix_to_excel
 
 # Initialize corpus database
 init_corpus_db()
@@ -111,6 +115,8 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
 SESSION_ID = st.session_state.session_id
+
+
 _BRANDING_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_config.json"))
 _BRANDING_LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_logo.png"))
 _INDEX_PATH = os.path.abspath(
@@ -133,6 +139,9 @@ st.set_page_config(
 )
 inject_css()
 
+init_db()
+
+
 st.markdown(
     """
 <style>
@@ -142,7 +151,6 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
-
 # ── SESSION TIMEOUT & ROUTE PROTECTION ────────────────────────────────────────
 TIMEOUT_LIMIT = 15 * 60  # 15 minutes in seconds
 
@@ -163,9 +171,7 @@ if last_interaction and st.session_state.get("authenticated", False):
             if key in st.session_state:
                 del st.session_state[key]
         clear_session(SESSION_ID)
-        st.warning(
-            "⏱️ Your session has expired due to 15 minutes of inactivity. Please log in again."
-        )
+        st.warning("⏱️ Your session has expired due to 15 minutes of inactivity. Please log in again.")
         st.stop()
     else:
         st.session_state.last_interaction = time.time()
@@ -173,17 +179,6 @@ if last_interaction and st.session_state.get("authenticated", False):
 
 # Render Login UI if not authenticated
 if not st.session_state.get("authenticated", False):
-    st.markdown(
-        '<div class="login-container">'
-        '<div class="login-header">'
-        '<div class="login-icon">🔍</div>'
-        '<div class="login-title">Plagiarism Detection Portal</div>'
-        '<div class="login-subtitle">Sign in to access the system</div>'
-        '</div>'
-        '<div class="login-accent-bar"></div>',
-        unsafe_allow_html=True,
-    )
-
     with st.form("login_form"):
         username = st.text_input("Username", value="admin")
         password = st.text_input("Password", type="password", value="admin")
@@ -194,51 +189,61 @@ if not st.session_state.get("authenticated", False):
 
             if not username or not password:
                 st.error("Please enter both username and password.")
-
             elif verify_user(username, password):
                 role = get_user_role(username)
-
-                if role is None:
-                    st.error("Unable to determine the user role.")
-                else:
+                if role is not None:
                     st.session_state.authenticated = True
                     st.session_state.username = username
                     st.session_state.role = role
                     st.session_state.last_interaction = time.time()
+
                     cache_session_state(SESSION_ID, "authenticated", True)
                     cache_session_state(SESSION_ID, "username", username)
                     cache_session_state(SESSION_ID, "role", role)
                     cache_session_state(SESSION_ID, "last_interaction", time.time())
 
                     st.success(f"Welcome back, {username}!")
+
                     st.rerun()
-
             else:
-                st.error("Invalid username or password. Try admin / admin123")
 
+                st.error("Invalid username or password.")
+    st.stop()
+    st.error("Invalid username or password. Try admin / admin123")
     st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 
 
 # Active user role
+
 user_role = st.session_state.get("role", "user")
 
+
+# ── Top-right Theme Toggle ───────────────────────────────────────────────────
+current_theme = get_theme_name()
+
+# Create a narrow right-aligned column for the theme toggle
+_, theme_col = st.columns([0.94, 0.06])
+
+with theme_col:
+    theme_icon = "☀️" if current_theme == "Dark" else "🌙"
+
+    if st.button(
+        theme_icon,
+        key="theme_toggle",
+    ):
+        new_theme = "Light" if current_theme == "Dark" else "Dark"
+        set_theme(new_theme)
+        st.rerun()
+
+
+# ── Sidebar (ROLE RESTRICTED Settings) ────────────────────────────────────────
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(
-        '<div class="sidebar-brand-title">🔍 Plagiarism Detector</div>'
-        '<div class="sidebar-brand-kicker">Semantic Analysis Engine</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        sidebar_user_badge_html(
-            st.session_state.get("username", "user"), user_role
-        ),
-        unsafe_allow_html=True,
-    )
+    st.markdown("### ⚙️ Settings")
 
-    current_theme = get_theme_name()
+
 
     selected_theme = st.radio(
         "Theme",
@@ -251,6 +256,7 @@ with st.sidebar:
         set_theme(selected_theme)
         st.rerun()
 
+
     if user_role == "admin":
         threshold = st.slider(
             "Plagiarism Threshold",
@@ -259,7 +265,11 @@ with st.sidebar:
             value=PLAGIARISM_THRESHOLD,
             step=0.01,
 
+
             help="Cosine similarity above which a pair is flagged.",
+
+          
+
             help="Cosine similarity threshold for flagging.",
 
             key="threshold_slider",
@@ -276,6 +286,31 @@ with st.sidebar:
             value=5,
             key="faiss_top_k_slider",
         )
+
+
+        # ── Customizable Chunk Size & Overlap Sliders (#153) ─────────────────
+        st.markdown("### ✂️ Chunking Settings")
+        chunk_size = st.slider(
+            "Chunk Size (characters)",
+            200,
+            2000,
+            value=500,
+            step=50,
+            help="Target character length for text chunks during embedding.",
+            key="chunk_size_slider",
+        )
+        chunk_overlap = st.slider(
+            "Chunk Overlap (characters)",
+            0,
+            500,
+            value=50,
+            step=10,
+            help="Character overlap between consecutive chunks to preserve contextual boundary.",
+            key="chunk_overlap_slider",
+        )
+
+        ocr_language = DEFAULT_OCR_LANGUAGE
+        ocr_dpi = DEFAULT_OCR_DPI
 
         with st.expander("🔤 OCR Settings", expanded=False):
             ocr_language_labels = {
@@ -300,16 +335,125 @@ with st.sidebar:
                 step=25,
                 key="ocr_dpi_slider",
             )
+
     else:
         threshold = PLAGIARISM_THRESHOLD
         use_chunk_matrix = False
         faiss_top_k = 5
+        chunk_size = 500
+        chunk_overlap = 50
         ocr_language = DEFAULT_OCR_LANGUAGE
         ocr_dpi = DEFAULT_OCR_DPI
 
-    st.markdown("---")
-    st.markdown("### 🔍 Class Filter")
     unique_classes = ["All Classes"] + get_unique_class_sections()
+
+    selected_class = st.selectbox("Select Class/Section", unique_classes, index=0)
+
+# ── Main UI ───────────────────────────────────────────────────────────────────
+st.title("🔍 Semantic Plagiarism Detection System")
+
+uploaded_files = st.file_uploader(
+    "📂 Upload Assignments",
+    type=["pdf", "docx", "txt"],
+    accept_multiple_files=True,
+    key="file_uploader",
+)
+
+file_bytes_dict = {f.name: f.getvalue() for f in uploaded_files} if uploaded_files else {}
+
+if len(file_bytes_dict) < 2:
+    st.info("Upload at least 2 files to begin analysis.")
+    st.stop()
+
+# ── Pipeline Execution ────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def run_pipeline(
+    file_bytes_dict: dict[str, bytes],
+    ocr_language: str,
+    ocr_dpi: int,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+):
+    raw_texts = {}
+    for name, data in file_bytes_dict.items():
+        raw_texts[name] = extract_text(
+            _io.BytesIO(data),
+            name,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
+        )
+
+    chunked_docs = chunk_documents(
+        raw_texts,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    translated_chunked_docs = {}
+
+    for doc_name, chunks in chunked_docs.items():
+        translated_chunked_docs[doc_name] = []
+        for chunk in chunks:
+            prepared = prepare_text_for_embedding(chunk)
+            translated_chunked_docs[doc_name].append(prepared["embedding_text"])
+
+    embeddings = embed_documents(translated_chunked_docs)
+    sim_df = document_similarity_matrix(embeddings)
+
+    names = list(embeddings.keys())
+    n = len(names)
+    chunk_mat = np.zeros((n, n))
+
+    for i, na in enumerate(names):
+        for j, nb in enumerate(names):
+            if i == j:
+                chunk_mat[i, j] = 1.0
+            elif j > i:
+                ea, eb = embeddings[na], embeddings[nb]
+                score = float(np.max(cosine_similarity(ea, eb))) if ea.size and eb.size else 0.0
+                chunk_mat[i, j] = score
+                chunk_mat[j, i] = score
+
+    chunk_sim_df = pd.DataFrame(chunk_mat, index=names, columns=names)
+    faiss_index, registry = build_index(embeddings, chunked_docs)
+    ai_probabilities = detect_documents_ai_probability(chunked_docs)
+
+    return (
+        raw_texts,
+        chunked_docs,
+        embeddings,
+        sim_df,
+        chunk_sim_df,
+        faiss_index,
+        registry,
+        ai_probabilities,
+    )
+
+with st.spinner("🧠 Processing files and building embeddings…"):
+    analysis_results = run_pipeline(
+        file_bytes_dict,
+        ocr_language,
+        ocr_dpi,
+        chunk_size,
+        chunk_overlap,
+    )
+
+(
+    raw_texts,
+    chunked_docs,
+    embeddings,
+    sim_df,
+    chunk_sim_df,
+    faiss_index,
+    registry,
+    ai_probabilities,
+) = analysis_results
+
+active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
+flags = flag_plagiarism(active_sim_df, threshold=threshold)
+
+st.subheader("📊 Analysis Summary")
+st.write(f"Processed **{len(raw_texts)}** documents with Chunk Size: `{chunk_size}` and Overlap: `{chunk_overlap}`.")
+
     selected_class = st.selectbox(
         "Select Class/Section",
         unique_classes,
@@ -496,6 +640,7 @@ else:
             index_buffer = _io.BytesIO(cached_index_data)
             faiss_index = faiss.deserialize_index(faiss.read_index(index_buffer))
             registry = get_chunk_registry()
+
         except Exception:
 
             if os.path.exists(_INDEX_PATH):
@@ -507,12 +652,35 @@ else:
 
     if "analysis_results" not in st.session_state:
         st.session_state.analysis_results = None
+
+            st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
+        except Exception as e:
+            print(f"[Redis] Error loading cached index: {e}, falling back to disk")
+            from src.core.faiss_index import load_or_rebuild_index
+
+            faiss_index, registry, index_recovered = load_or_rebuild_index(_INDEX_PATH)
+
+            if index_recovered:
+                if faiss_index.ntotal:
+                    st.warning("FAISS index was missing, corrupted, or inconsistent and was "f"automatically rebuilt from {faiss_index.ntotal} stored vectors.")
+                else:
+                    st.info(
+                    "No stored embeddings were found. An empty FAISS index was "
+                    "initialized safely.")
+            else:
+                st.info(f"Loaded and validated the existing FAISS index with "f"{faiss_index.ntotal} vectors.")
+
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
+        # Try to load from Redis cache
+
         cached_results = get_analysis_results(f"{SESSION_ID}:current")
         if cached_results is not None:
             st.session_state.analysis_results = cached_results
 
     if "analysis_file_signature" not in st.session_state:
         st.session_state.analysis_file_signature = None
+
         cached_signature = get_session_state(SESSION_ID, "analysis_file_signature")
         if cached_signature is not None:
             st.session_state.analysis_file_signature = cached_signature
@@ -522,6 +690,13 @@ else:
     else:
         faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
         registry = get_chunk_registry()
+
+        # Try to load from Redis cache
+        cached_signature = get_session_state(SESSION_ID, "analysis_file_signature")
+        if cached_signature is not None:
+            st.session_state.analysis_file_signature = cached_signature
+    
+
 
 
     # 1. LOCAL FILE UPLOADER
@@ -821,7 +996,55 @@ else:
     # ══ TAB 3: MATRIX ═════════════════════════════════════════════════════════
     with tab_matrix:
         st.subheader("📋 Similarity Matrix")
+
+        if active_sim_df is None:
+            st.markdown(
+                empty_state_html(
+                    "No Similarity Matrix",
+                    "Ensure at least 2 documents are uploaded to compute similarities.",
+                    "📋",
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+
+            def _highlight(val: Any) -> str:
+                numeric_val = float(val)
+                if numeric_val >= 0.90:
+                    return "background-color:#ff4b4b;color:white;font-weight:bold;"
+                elif numeric_val >= threshold:
+                    return "background-color:#ffa500;color:white;font-weight:bold;"
+                return ""
+
+            styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
+            st.dataframe(styled_df, use_container_width=True)
+
+            # Export options row
+            col_csv, col_excel = st.columns(2)
+
+            with col_csv:
+                st.download_button(
+                    "⬇️ Download CSV",
+                    active_sim_df.to_csv().encode("utf-8"),
+                    "similarity_matrix.csv",
+                    "text/csv",
+                    use_container_width=True,
+                )
+
+            with col_excel:
+                excel_data = export_similarity_matrix_to_excel(
+                    active_sim_df, threshold=threshold
+                )
+                st.download_button(
+                    "📊 Export as Styled Excel (.xlsx)",
+                    excel_data,
+                    "similarity_matrix_styled.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
         st.dataframe(active_sim_df.style.format("{:.4f}"), use_container_width=True)
+
 
     # ══ TAB 4: HEATMAP ════════════════════════════════════════════════════════
     with tab_heatmap:
