@@ -1,4 +1,4 @@
-from utils.warning_list import (
+from src.utils.warning_list import (
     filter_warnings,
     paginate_warnings,
     prepare_warning_page,

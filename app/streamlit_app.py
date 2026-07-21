@@ -21,7 +21,7 @@ from app.theme import (
 )
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import Any
-from utils.warning_list import render_warning_controls
+from src.utils.warning_list import render_warning_controls
 from src.core.text_chunking import chunk_documents
 from src.core.embedding_model import embed_documents
 from src.core.similarity import (
@@ -30,12 +30,6 @@ from src.core.similarity import (
     find_most_similar_chunks,
     PLAGIARISM_THRESHOLD,
 )
-
-
-from src.visualization.heatmap import (
-    plot_similarity_heatmap,
-    plot_chunk_similarity_comparison,
-)
 from src.core.faiss_index import (
     build_index,
     find_plagiarised_chunks,
@@ -43,19 +37,11 @@ from src.core.faiss_index import (
     save_index,
     load_index,
     build_index_from_matrix,
-    ChunkRecord,
 )
-from src.core.similarity import (  # noqa: E402
-    PLAGIARISM_THRESHOLD,
-    document_similarity_matrix,
-    find_most_similar_chunks,
-    flag_plagiarism,
-)
-from src.core.text_chunking import chunk_documents  # noqa: E402
-from src.core.webhook import send_plagiarism_alert  # noqa: E402
-from src.core.ai_detector import detect_documents_ai_probability  # noqa: E402
-from src.visualization.network_graph import plot_similarity_network  # noqa: E402
-from src.db import (  # noqa: E402
+from src.core.webhook import send_plagiarism_alert
+from src.core.ai_detector import detect_documents_ai_probability
+from src.visualization.network_graph import plot_similarity_network
+from src.db import (
     init_corpus_db,
     get_all_documents,
     delete_document,
@@ -67,12 +53,12 @@ from src.db import (  # noqa: E402
     get_unique_class_sections,
     get_documents_by_class,
 )
-from src.utils.pdf_report import generate_plagiarism_report  # noqa: E402
-from src.utils.badge_generator import (  # noqa: E402
+from src.utils.pdf_report import generate_plagiarism_report
+from src.utils.badge_generator import (
     generate_badge_png,
     generate_badge_pdf,
 )
-from src.utils.redis_cache import (  # noqa: E402
+from src.utils.redis_cache import (
     cache_session_state,
     get_session_state,
     clear_session,
@@ -80,9 +66,8 @@ from src.utils.redis_cache import (  # noqa: E402
     get_faiss_index,
     cache_analysis_results,
     get_analysis_results,
-    get_cache,
 )
-from src.visualization.heatmap import (  # noqa: E402
+from src.visualization.heatmap import (
     plot_chunk_similarity_comparison,
     plot_similarity_heatmap,
 )
@@ -92,15 +77,22 @@ from src.core.document_parser import (
     OCRDependencyError,
     SUPPORTED_OCR_LANGUAGES,
     extract_text,
-    normalize_ocr_settings,
     prepare_text_for_embedding,
+)
+from src.db.auth import (
+    init_db,
+    verify_user,
+    get_user_role,
+    add_user,
+    get_all_users,
+    delete_user,
+    update_password,
+    get_tour_completed,
+    set_tour_completed,
 )
 
 # Initialize corpus database
 init_corpus_db()
-
-# FAISS index file path
-_INDEX_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "corpus.index"))
 
 # Generate unique session ID for this Streamlit session
 if "session_id" not in st.session_state:
@@ -113,18 +105,6 @@ _BRANDING_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), 
 _BRANDING_LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_logo.png"))
 _INDEX_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "corpus.index")
-)
-from src.utils.pdf_report import generate_plagiarism_report
-from src.db.auth import (
-    init_db,
-    verify_user,
-    get_user_role,
-    add_user,
-    get_all_users,
-    delete_user,
-    update_password,
-    get_tour_completed,
-    set_tour_completed,
 )
 from streamlit_tour import Tour
 
@@ -969,19 +949,14 @@ else:
             with st.spinner(
                 "🧠 Processing new files, building embeddings and FAISS index…"
             ):
-                (
-                    raw_texts_new,
-                    chunked_docs_new,
-                    embeddings_new,
-                    sim_df_new,
-                    chunk_sim_df_new,
-                    faiss_index_new,
-                    registry_new,
-                ) = run_pipeline(
+                analysis_results = run_pipeline(
                     pipeline_files,
                     ocr_language,
                     ocr_dpi,
                 )
+                file_signature = hashlib.sha256(
+                    "".join(sorted(new_files.keys())).encode("utf-8")
+                ).hexdigest()
 
         except OCRDependencyError as exc:
             failed_files = getattr(
@@ -1041,59 +1016,21 @@ else:
                 assignment_title=meta["assignment_title"],
             )
 
-        # If an index already exists, append the new vectors.
-        if faiss_index is not None:
-            save_index(faiss_index, _INDEX_PATH)
-            # Cache FAISS index in Redis
-            try:
-                import faiss
-                import io
-                index_buffer = io.BytesIO()
-                faiss.write_index(faiss_index, index_buffer)
-                index_buffer.seek(0)
-                cache_faiss_index(index_key, index_buffer.getvalue())
-            except Exception as e:
-                print(f"[Redis] Error caching FAISS index: {e}")
-            all_vectors = []
-            all_registry = registry.copy()
-
-            for doc_name, emb in embeddings_new.items():
-                chunks = chunked_docs_new.get(doc_name, [])
-                if emb.ndim != 2 or emb.shape[0] == 0:
-                    continue
-
-                for i, (vec, chunk_text) in enumerate(zip(emb, chunks)):
-                    all_vectors.append(vec.astype("float32"))
-                    all_registry.append(ChunkRecord(doc_name, i, chunk_text))
-
-            if all_vectors:
-                matrix = np.vstack(all_vectors)
-                faiss_index.add(matrix)  # type: ignore[arg-type]
-                registry = all_registry
-                st.success(f"✅ Added {len(all_vectors)} new vectors to existing index")
-            raw_texts = raw_texts_new
-            chunked_docs = chunked_docs_new
-            embeddings = embeddings_new
-            sim_df = sim_df_new
-            chunk_sim_df = chunk_sim_df_new
-        else:
-            # No existing index: use the newly generated data.
-            faiss_index = faiss_index_new
-            registry = registry_new
-
-        # Always set pipeline variables from the new results
-        raw_texts = raw_texts_new
-        chunked_docs = chunked_docs_new
-        embeddings = embeddings_new
-        sim_df = sim_df_new
-        chunk_sim_df = chunk_sim_df_new
-
-        # Save the updated FAISS index.
+        # If an index already exists, save and cache it.
         save_index(faiss_index, _INDEX_PATH)
+        try:
+            import io
+            import faiss
+            index_buffer = io.BytesIO()
+            faiss.write_index(faiss_index, index_buffer)
+            index_buffer.seek(0)
+            cache_faiss_index(SESSION_ID, index_buffer.getvalue())
+        except Exception as e:
+            print(f"[Redis] Error caching FAISS index: {e}")
 
         # Store chunks in the database for persistence.
-        for doc_name, emb in embeddings_new.items():
-            chunks = chunked_docs_new.get(doc_name, [])
+        for doc_name, emb in embeddings.items():
+            chunks = chunked_docs.get(doc_name, [])
             if emb.ndim != 2 or emb.shape[0] == 0:
                 continue
             start_id = len(

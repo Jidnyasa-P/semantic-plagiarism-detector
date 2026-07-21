@@ -6,8 +6,7 @@ Tests for daily summary email functionality.
 
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 from src.utils.daily_summary_email import (
     get_incidents_last_24h,

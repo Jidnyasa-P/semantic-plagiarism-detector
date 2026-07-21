@@ -85,49 +85,36 @@ similarity, and **FAISS vector search**.
 
 ```
 semantic_plagiarism_detector/
-│
-├── src/                      # Source package containing all components
-│   ├── __init__.py           # Exports backward-compatible unified public API
-│   │
-│   ├── core/                 # Core NLP and mathematical algorithms
-│   │   ├── __init__.py
-│   │   ├── document_parser.py# PDF, Word, and Text parser
-│   │   ├── text_chunking.py  # Paragraph segmenter
-│   │   ├── embedding_model.py# Sentence Transformer model loader
-│   │   ├── faiss_index.py    # Vector search indexing (Flat / IVF)
-│   │   ├── similarity.py     # Cosine similarity calculations
-│   │   └── translator.py     # Translation helper
-│   │
-│   ├── db/                   # Database systems
-│   │   ├── __init__.py
-│   │   ├── auth.py           # SQLite login database
-│   │   └── corpus_db.py      # SQLite corpus document & vector database
-│   │
-│   └── visualization/        # Charting & visualizations
-│       ├── __init__.py
-│       ├── heatmap.py        # Cosine similarity heatmaps
-│       └── network_graph.py  # Plagiarism connection networks
-│
-├── app/
-│   └── streamlit_app.py      # Streamlit Entry Dashboard
-│
-├── tests/                    # Reorganized unit testing suite
-│   ├── conftest.py           # Testing configuration/stubs
-│   ├── core/                 # Unit tests for NLP and indexing
-│   ├── db/                   # Unit tests for databases
-│   └── visualization/        # Unit tests for plots
-│
-├── users.db                  # SQLite user store (auto-created on first run)
-├── corpus.db                 # SQLite document store (auto-created on first run)
-│
-├── evaluation/
-│   ├── benchmark_dataset.json# 25 labelled text pairs
-│   ├── evaluate.py           # Precision/recall/F1 + ROC curves
-│   └── results/              # Generated plots & metrics (gitignored)
-│
-├── .gitignore
-├── requirements.txt
-└── README.md
+├── .github/                  # CI/CD workflows and issue templates
+│   ├── ISSUE_TEMPLATE/       # Bug report and feature request forms
+│   └── workflows/            # GitHub Actions CI and lint workflows
+├── app/                      # Streamlit application interface
+│   ├── components/           # Incident export and UI helper components
+│   ├── streamlit_app.py      # Main Streamlit dashboard entrypoint
+│   └── theme.py              # Visual design system and CSS injection
+├── src/                      # Core backend source package
+│   ├── core/                 # Parsing, chunking, embedding, FAISS & similarity
+│   ├── db/                   # SQLite authentication, corpus & incident databases
+│   ├── utils/                # PDF reports, warning lists, badges & caching
+│   └── visualization/        # Seaborn/Plotly heatmaps and network graphs
+├── tests/                    # Comprehensive unit and integration test suite
+│   ├── app/                  # UI and dashboard smoke tests
+│   ├── core/                 # Core NLP, translation, and indexing tests
+│   ├── db/                   # Database authentication and corpus tests
+│   ├── utils/                # PDF reports, email, and cache tests
+│   └── visualization/        # Network graph and heatmap tests
+├── docs/                     # Detailed setup guides and integration docs
+├── evaluation/               # Benchmark dataset and evaluation harness
+├── screenshots/              # Dashboard UI preview images
+├── CHANGELOG.md              # Version release history
+├── CODE_OF_CONDUCT.md        # Contributor Covenant v2.1
+├── CONTRIBUTING.md           # Developer setup and contribution guidelines
+├── LICENSE                   # MIT License
+├── README.md                 # Project documentation
+├── SECURITY.md               # Vulnerability reporting policy
+├── SUPPORT.md                # Help channels and FAQ
+├── pytest.ini                # Pytest configuration
+└── requirements.txt          # Python dependencies
 ```
 
 ---

@@ -9,7 +9,10 @@ import os
 import pickle
 import json
 from typing import Any, Optional
-import redis
+try:
+    import redis
+except ImportError:
+    redis = None
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,7 +35,7 @@ class RedisCache:
     """Redis cache manager for session state and computational results."""
     
     _instance: Optional['RedisCache'] = None
-    _client: Optional[redis.Redis] = None
+    _client: Optional[Any] = None
     
     def __new__(cls) -> 'RedisCache':
         if cls._instance is None:
@@ -45,6 +48,10 @@ class RedisCache:
     
     def _connect(self) -> None:
         """Establish Redis connection with fallback to in-memory if unavailable."""
+        if redis is None:
+            self._client = None
+            return
+
         try:
             if REDIS_URL:
                 self._client = redis.from_url(
@@ -65,18 +72,18 @@ class RedisCache:
             # Test connection
             self._client.ping()
             print(f"[RedisCache] Connected to Redis at {REDIS_HOST}:{REDIS_PORT}")
-        except (redis.ConnectionError, redis.TimeoutError) as e:
+        except (AttributeError, redis.ConnectionError, redis.TimeoutError) as e:
             print(f"[RedisCache] Redis connection failed: {e}. Running without cache.")
             self._client = None
     
     def is_available(self) -> bool:
         """Check if Redis is available."""
-        if self._client is None:
+        if redis is None or self._client is None:
             return False
         try:
             self._client.ping()
             return True
-        except (redis.ConnectionError, redis.TimeoutError):
+        except (AttributeError, redis.ConnectionError, redis.TimeoutError):
             return False
     
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:

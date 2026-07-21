@@ -28,7 +28,6 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
-from reportlab.lib import colors
 
 
 def generate_badge_png(
@@ -311,7 +310,7 @@ def generate_badge_pdf(
     # Text preview
     if text_preview:
         preview = text_preview[:150] + "..." if len(text_preview) > 150 else text_preview
-        story.append(Paragraph(f"<b>Verified Text Preview:</b>", normal_style))
+        story.append(Paragraph("<b>Verified Text Preview:</b>", normal_style))
         story.append(Paragraph(f"<i>{preview}</i>", small_style))
         story.append(Spacer(1, 0.4 * inch))
     
