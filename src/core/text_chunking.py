@@ -1,76 +1,47 @@
 """
-text_chunking.py
-----------------
-Splits raw document text into meaningful paragraph-level chunks.
-Chunking improves plagiarism detection by enabling localised similarity
-comparisons rather than comparing entire documents as single blobs.
+src/core/text_chunking.py
+-------------------------
+Utilities for splitting raw extracted document text into processable chunks.
 """
 
-import re
-from typing import List
+from typing import Dict, List
 
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-MIN_CHUNK_WORDS = 20  # Discard chunks shorter than this (likely noise)
-MAX_CHUNK_WORDS = 200  # Hard ceiling; longer chunks are sub-split
-
-
-def _clean_text(text: str) -> str:
+def chunk_text(
+    text: str,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+) -> List[str]:
     """
-    Basic Unicode-safe text cleaning:
-    - Preserve multilingual characters
-    - Remove control characters
-    - Collapse repeated spaces and blank lines
+    Splits text into chunks of a target character length with overlapping boundaries.
     """
-    # Preserve Unicode text while removing unwanted control characters.
-    text = "".join(
-        character
-        for character in text
-        if character in {"\n", "\t"} or character.isprintable()
-    )
+    if not text or not text.strip():
+        return []
 
-    # Collapse repeated spaces and tabs.
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # Collapse 3 or more newlines into one paragraph separator.
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    return text.strip()
-
-
-def _split_into_paragraphs(text: str) -> List[str]:
-    """
-    Split text on blank lines (standard paragraph boundary).
-    Each paragraph is stripped and empty ones are discarded.
-    """
-    paragraphs = [p.strip() for p in text.split("\n\n")]
-    return [p for p in paragraphs if p]
-
-
-def _word_count(text: str) -> int:
-    return len(text.split())
-
-
-def _sub_split_long_paragraph(paragraph: str, max_words: int) -> List[str]:
-    """
-    If a paragraph exceeds max_words, split it on sentence boundaries
-    and group sentences into sub-chunks below the word limit.
-    """
-    # Simple sentence tokeniser (handles . ! ?)
-    sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+    words = text.split()
     chunks = []
-    current_chunk: List[str] = []
-    current_word_count = 0
+    current_chunk = []
+    current_length = 0
 
-    for sentence in sentences:
-        sentence_wc = _word_count(sentence)
-        if current_word_count + sentence_wc > max_words and current_chunk:
+    for word in words:
+        word_len = len(word) + 1  # include space
+        if current_length + word_len > chunk_size and current_chunk:
             chunks.append(" ".join(current_chunk))
-            current_chunk = [sentence]
-            current_word_count = sentence_wc
+
+            # Retain overlap words from the end of the previous chunk
+            overlap_words = []
+            overlap_len = 0
+            for w in reversed(current_chunk):
+                if overlap_len + len(w) + 1 <= chunk_overlap:
+                    overlap_words.insert(0, w)
+                    overlap_len += len(w) + 1
+                else:
+                    break
+            current_chunk = overlap_words + [word]
+            current_length = sum(len(w) + 1 for w in current_chunk)
         else:
-            current_chunk.append(sentence)
-            current_word_count += sentence_wc
+            current_chunk.append(word)
+            current_length += word_len
 
     if current_chunk:
         chunks.append(" ".join(current_chunk))
@@ -78,51 +49,24 @@ def _sub_split_long_paragraph(paragraph: str, max_words: int) -> List[str]:
     return chunks
 
 
-def chunk_document(text: str) -> List[str]:
+# Alias for backward compatibility with src/core/__init__.py
+chunk_document = chunk_text
+
+
+def chunk_documents(
+    documents: Dict[str, str],
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+) -> Dict[str, List[str]]:
     """
-    Full chunking pipeline for a single document:
-    1. Clean raw text
-    2. Split into paragraphs
-    3. Discard very short paragraphs (noise)
-    4. Sub-split overly long paragraphs
-
-    Args:
-        text: Raw extracted text from a PDF.
-
-    Returns:
-        A list of text chunks (strings) ready for embedding.
+    Splits a dictionary of document raw texts into chunks respecting customizable
+    chunk size and overlap parameters.
     """
-    text = _clean_text(text)
-    paragraphs = _split_into_paragraphs(text)
-
-    final_chunks: List[str] = []
-
-    for para in paragraphs:
-        wc = _word_count(para)
-
-        if wc < MIN_CHUNK_WORDS:
-            # Too short → likely a heading or page artefact; skip
-            continue
-        elif wc > MAX_CHUNK_WORDS:
-            # Too long → sub-split on sentences
-            sub_chunks = _sub_split_long_paragraph(para, MAX_CHUNK_WORDS)
-            final_chunks.extend(
-                [c for c in sub_chunks if _word_count(c) >= MIN_CHUNK_WORDS]
-            )
-        else:
-            final_chunks.append(para)
-
-    return final_chunks
-
-
-def chunk_documents(documents: dict) -> dict:
-    """
-    Chunk multiple documents.
-
-    Args:
-        documents: Dict mapping document name → raw text string.
-
-    Returns:
-        Dict mapping document name → list of text chunks.
-    """
-    return {name: chunk_document(text) for name, text in documents.items()}
+    chunked_docs = {}
+    for doc_name, text in documents.items():
+        chunked_docs[doc_name] = chunk_text(
+            text,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+    return chunked_docs
