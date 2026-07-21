@@ -79,7 +79,18 @@ def init_incident_db(db_path: str | Path = DEFAULT_DB_PATH) -> None:
         )
         conn.commit()
 
+def _fetch_all_incidents(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        """
+        SELECT incident_id, document_a, document_b, similarity_score,
+               severity_rank, review_status, date_flagged, last_seen
+        FROM plagiarism_incidents
+        ORDER BY date_flagged DESC, incident_id ASC
+        """
+    ).fetchall()
 
+    return [dict(row) for row in rows]
 def sync_flagged_incidents(
     flags: Iterable[Mapping[str, Any]],
     db_path: str | Path = DEFAULT_DB_PATH,
@@ -118,16 +129,8 @@ def sync_flagged_incidents(
                     timestamp,
                 ),
             )
-        conn.commit()
-        rows = conn.execute(
-            """
-            SELECT incident_id, document_a, document_b, similarity_score,
-                   severity_rank, review_status, date_flagged, last_seen
-            FROM plagiarism_incidents
-            ORDER BY date_flagged DESC, incident_id ASC
-            """
-        ).fetchall()
-    return [dict(row) for row in rows]
+        conconn.commit()
+        return _fetch_all_incidents(conn)
 
 
 def get_all_incidents(
@@ -135,16 +138,7 @@ def get_all_incidents(
 ) -> list[dict[str, Any]]:
     init_incident_db(db_path)
     with closing(sqlite3.connect(str(db_path))) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            """
-            SELECT incident_id, document_a, document_b, similarity_score,
-                   severity_rank, review_status, date_flagged, last_seen
-            FROM plagiarism_incidents
-            ORDER BY date_flagged DESC, incident_id ASC
-            """
-        ).fetchall()
-    return [dict(row) for row in rows]
+       return _fetch_all_incidents(conn)
 
 
 def update_review_status(
