@@ -129,7 +129,7 @@ def sync_flagged_incidents(
                     timestamp,
                 ),
             )
-        conconn.commit()
+        conn.commit()
         return _fetch_all_incidents(conn)
 
 

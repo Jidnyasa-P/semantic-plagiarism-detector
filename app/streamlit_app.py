@@ -40,7 +40,7 @@ from src.core.faiss_index import (
     find_plagiarised_chunks,
     search_similar_chunks,
     save_index,
-    load_index,
+    load_or_rebuild_index,
     build_index_from_matrix,
 )
 from src.core.webhook import send_plagiarism_alert
@@ -642,13 +642,19 @@ else:
             st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
         except Exception as e:
             print(f"[Redis] Error loading cached index: {e}, falling back to disk")
-            if os.path.exists(_INDEX_PATH):
-                faiss_index = load_index(_INDEX_PATH)
-                registry = get_chunk_registry()
-                st.info(f"📂 Loaded existing FAISS index from disk with {faiss_index.ntotal} vectors")
+            from src.core.faiss_index import load_or_rebuild_index
+
+            faiss_index, registry, index_recovered = load_or_rebuild_index(_INDEX_PATH)
+
+            if index_recovered:
+                if faiss_index.ntotal:
+                    st.warning("FAISS index was missing, corrupted, or inconsistent and was "f"automatically rebuilt from {faiss_index.ntotal} stored vectors.")
+                else:
+                    st.info(
+                    "No stored embeddings were found. An empty FAISS index was "
+                    "initialized safely.")
             else:
-                faiss_index = None
-                registry = []
+                st.info(f"Loaded and validated the existing FAISS index with "f"{faiss_index.ntotal} vectors.")
 
     if "analysis_results" not in st.session_state:
         st.session_state.analysis_results = None
