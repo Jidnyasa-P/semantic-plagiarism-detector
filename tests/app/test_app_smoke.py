@@ -7,7 +7,7 @@ from streamlit.testing.v1 import AppTest
 from reportlab.pdfgen import canvas
 
 # Paths to stale artifacts that can pollute test runs
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _STALE_INDEX = os.path.join(_REPO_ROOT, "corpus.index")
 _STALE_DB = os.path.join(_REPO_ROOT, "corpus.db")
 
@@ -94,7 +94,7 @@ def test_app_smoke(mock_embed, mock_model_info, mock_webhook):
         at.session_state["page"] = "dashboard"
 
         # Initial run to display uploader
-        at.run()
+        at.run(timeout=30)
 
         # Assert uploader is found
         assert len(at.file_uploader) > 0

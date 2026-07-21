@@ -33,9 +33,12 @@ class TestRedisCache:
     @pytest.fixture
     def cache_with_mock(self, mock_redis_client):
         """Create a RedisCache instance with mocked client."""
+        from src.utils.redis_cache import _cache
         cache = RedisCache.__new__(RedisCache)
         cache._client = mock_redis_client
-        return cache
+        _cache._client = mock_redis_client
+        yield cache
+        _cache._client = None
     
     def test_cache_set_get(self, cache_with_mock, mock_redis_client):
         """Test basic set and get operations."""

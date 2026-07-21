@@ -52,6 +52,6 @@ def test_similarity_color_palette():
     medium_color = get_similarity_color(0.80)
     low_color = get_similarity_color(0.50)
 
-    assert high_color.hexval() == 0xFF4B4B
-    assert medium_color.hexval() == 0xFFA500
-    assert low_color.hexval() == 0x21C55D
+    assert high_color.hexval().lower() == "0xff4b4b"
+    assert medium_color.hexval().lower() == "0xffa500"
+    assert low_color.hexval().lower() == "0x21c55d"

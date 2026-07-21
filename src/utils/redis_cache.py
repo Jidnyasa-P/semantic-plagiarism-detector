@@ -78,12 +78,12 @@ class RedisCache:
     
     def is_available(self) -> bool:
         """Check if Redis is available."""
-        if redis is None or self._client is None:
+        if self._client is None:
             return False
         try:
             self._client.ping()
             return True
-        except (AttributeError, redis.ConnectionError, redis.TimeoutError):
+        except Exception:
             return False
     
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:

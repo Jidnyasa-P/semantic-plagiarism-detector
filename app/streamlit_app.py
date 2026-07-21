@@ -106,7 +106,10 @@ _BRANDING_LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".
 _INDEX_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "corpus.index")
 )
-from streamlit_tour import Tour
+try:
+    from streamlit_tour import Tour
+except ImportError:
+    Tour = None
 
 # Initialize database
 init_db()
@@ -377,7 +380,7 @@ with st.sidebar:
         st.rerun()
 
 # ── Onboarding Tour for First-Time Admin Users ───────────────────────────────────
-if user_role == "admin" and not get_tour_completed(st.session_state.username):
+if Tour is not None and user_role == "admin" and not get_tour_completed(st.session_state.username):
     username = st.session_state.username
     
     # Add a button to start the tour
