@@ -160,24 +160,7 @@ def sync_flagged_incidents(
             conn.rollback()
             raise sqlite3.Error(f"Failed to synchronize incidents: {e}") from e
 
-                VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?)
-                ON CONFLICT(incident_id) DO UPDATE SET
-                    similarity_score = excluded.similarity_score,
-                    severity_rank = excluded.severity_rank,
-                    last_seen = excluded.last_seen
-                """,
-                (
-                    build_incident_id(first, second),
-                    first,
-                    second,
-                    _normalise_score(flag.get("similarity", 0.0)),
-                    _severity_rank(flag),
-                    timestamp,
-                    timestamp,
-                ),
-            )
-        conn.commit()
-        return _fetch_all_incidents(conn)
+
 
 
 def get_all_incidents(

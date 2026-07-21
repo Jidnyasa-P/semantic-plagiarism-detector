@@ -11,7 +11,6 @@ import io
 from typing import Dict, List, Tuple, Optional
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
 
 # Supported extensions for the plagiarism detection pipeline

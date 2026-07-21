@@ -23,6 +23,8 @@ from reportlab.lib.utils import ImageReader
 from io import BytesIO
 from typing import List, Optional, Tuple
 from datetime import datetime
+import fitz
+
 
 
 def get_similarity_color(score: float) -> HexColor:
@@ -312,7 +314,6 @@ def generate_plagiarism_report(
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
     buffer.seek(0)
     return buffer
-import fitz  # PyMuPDF
 
 
 def highlight_pdf_matches(
@@ -356,37 +357,3 @@ def highlight_pdf_matches(
     output_buffer = doc.tobytes()
     doc.close()
     return output_buffer
-
-import fitz  # PyMuPDF
-
-def highlight_pdf_matches(
-    pdf_source: str | bytes,
-    matching_chunks: List[str],
-    highlight_color: Tuple[float, float, float] = (1.0, 0.85, 0.0),  # Yellow
-) -> bytes:
-    """Opens a PDF, searches for matching text chunks, applies yellow highlights
-
-    on exact bounding box coordinates, and returns the modified PDF bytes.
-    """
-    if isinstance(pdf_source, bytes):
-        doc = fitz.open(stream=pdf_source, filetype="pdf")
-    else:
-        doc = fitz.open(pdf_source)
-
-    for page in doc:
-        for chunk in matching_chunks:
-            chunk_clean = str(chunk).strip()
-            # Avoid highlighting tiny single words/chars to prevent false positives
-            if len(chunk_clean) < 3:
-                continue
-
-            # Search page for matching text coordinates
-            quad_matches = page.search_for(chunk_clean)
-            for rect in quad_matches:
-                annot = page.add_highlight_annot(rect)
-                annot.set_colors(stroke=highlight_color)
-                annot.update()
-
-    output_bytes = doc.tobytes()
-    doc.close()
-    return output_bytes
