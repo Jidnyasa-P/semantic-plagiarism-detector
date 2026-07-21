@@ -11,8 +11,8 @@ from typing import List
 
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-MIN_CHUNK_WORDS = 20        # Discard chunks shorter than this (likely noise)
-MAX_CHUNK_WORDS = 200       # Hard ceiling; longer chunks are sub-split
+MIN_CHUNK_WORDS = 20  # Discard chunks shorter than this (likely noise)
+MAX_CHUNK_WORDS = 200  # Hard ceiling; longer chunks are sub-split
 
 
 def _clean_text(text: str) -> str:

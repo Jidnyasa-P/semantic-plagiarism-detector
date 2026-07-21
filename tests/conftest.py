@@ -19,6 +19,7 @@ Stubs out sentence_transformers so tests can run without a fully compatible
 TensorFlow / Keras installation. The embedding_model tests mock _get_model()
 directly, so no real model is loaded.
 """
+
 import sys
 import types
 import shutil

@@ -117,9 +117,8 @@ def prepare_text_for_embedding(
         translated_text = ""
 
     translated_text = str(translated_text or "").strip()
-    translation_failed = (
-        not translated_text
-        or translated_text.lower().startswith("(translation error")
+    translation_failed = not translated_text or translated_text.lower().startswith(
+        "(translation error"
     )
 
     if translation_failed:

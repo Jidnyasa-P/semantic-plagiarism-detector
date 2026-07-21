@@ -79,7 +79,9 @@ def test_search_similar_chunks_exclude_doc(two_doc_data):
     embeddings, chunked = two_doc_data
     index, registry = build_index(embeddings, chunked, index_type="flat")
     query = embeddings["doc_a"][0]
-    results = search_similar_chunks(query, index, registry, top_k=5, exclude_doc="doc_a")
+    results = search_similar_chunks(
+        query, index, registry, top_k=5, exclude_doc="doc_a"
+    )
     assert all(r.doc_name != "doc_a" for r, _ in results)
 
 
@@ -99,18 +101,30 @@ def test_find_plagiarised_chunks_deduplicates(two_doc_data):
     embeddings = {"doc_a": emb, "doc_b": emb}
     chunked = {"doc_a": ["c0", "c1"], "doc_b": ["c0", "c1"]}
     index, registry = build_index(embeddings, chunked, index_type="flat")
-    matches = find_plagiarised_chunks(embeddings, chunked, index, registry, threshold=0.5)
+    matches = find_plagiarised_chunks(
+        embeddings, chunked, index, registry, threshold=0.5
+    )
     # Chunk-pairs should not be duplicated (including symmetric duplicates)
     pair_keys = [
-        tuple(sorted([(m["source_doc"], m["source_chunk_text"]), (m["match_doc"], m["match_chunk_text"])]))
+        tuple(
+            sorted(
+                [
+                    (m["source_doc"], m["source_chunk_text"]),
+                    (m["match_doc"], m["match_chunk_text"]),
+                ]
+            )
+        )
         for m in matches
     ]
     assert len(pair_keys) == len(set(pair_keys))
 
+
 def test_find_plagiarised_chunks_sorted_descending(two_doc_data):
     embeddings, chunked = two_doc_data
     index, registry = build_index(embeddings, chunked, index_type="flat")
-    matches = find_plagiarised_chunks(embeddings, chunked, index, registry, threshold=0.0)
+    matches = find_plagiarised_chunks(
+        embeddings, chunked, index, registry, threshold=0.0
+    )
     sims = [m["similarity"] for m in matches]
     assert sims == sorted(sims, reverse=True)
 

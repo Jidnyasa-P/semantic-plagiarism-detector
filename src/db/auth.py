@@ -18,7 +18,9 @@ import sqlite3
 import bcrypt
 import os
 
-_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "users.db"))
+_DB_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "users.db")
+)
 
 
 def _connect() -> sqlite3.Connection:

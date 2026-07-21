@@ -19,31 +19,33 @@ import functools
 def _make_documents_hash(documents: Dict[str, str]) -> str:
     """
     Create a stable hash from document contents for caching.
-    
+
     Args:
         documents: Dict mapping doc name → raw text content.
-    
+
     Returns:
         SHA256 hash string of the sorted document contents.
     """
     # Sort by document name to ensure consistent hashing
     sorted_items = sorted(documents.items())
-    hash_input = str(sorted_items).encode('utf-8')
+    hash_input = str(sorted_items).encode("utf-8")
     return hashlib.sha256(hash_input).hexdigest()
 
 
 @functools.lru_cache(maxsize=32)
-def _cached_lexical_similarity_matrix(documents_hash: str, documents_tuple: tuple) -> pd.DataFrame:
+def _cached_lexical_similarity_matrix(
+    documents_hash: str, documents_tuple: tuple
+) -> pd.DataFrame:
     """
     Internal cached implementation of lexical similarity matrix.
-    
+
     This function uses lru_cache for Python-level caching. The documents
     are passed as a tuple to make them hashable for the cache.
-    
+
     Args:
         documents_hash: Hash of the document contents (for cache key).
         documents_tuple: Tuple of (doc_name, doc_text) pairs.
-    
+
     Returns:
         Symmetric pandas DataFrame with document names as index and columns.
         Values range 0.0 – 1.0 (1.0 = identical).
@@ -70,7 +72,9 @@ def _cached_lexical_similarity_matrix(documents_hash: str, documents_tuple: tupl
     return df
 
 
-def lexical_similarity_matrix(documents: Dict[str, str], use_cache: bool = True) -> pd.DataFrame:
+def lexical_similarity_matrix(
+    documents: Dict[str, str], use_cache: bool = True
+) -> pd.DataFrame:
     """
     Build an N×N TF-IDF cosine similarity matrix between all document pairs.
 

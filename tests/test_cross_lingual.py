@@ -49,15 +49,11 @@ def test_non_english_text_is_translated_for_embedding_only():
     result = prepare_text_for_embedding(
         original,
         detector=lambda _: "es",
-        translator=lambda text, **_: (
-            "Artificial intelligence helps teachers."
-        ),
+        translator=lambda text, **_: "Artificial intelligence helps teachers.",
     )
 
     assert result["original_text"] == original
-    assert result["embedding_text"] == (
-        "Artificial intelligence helps teachers."
-    )
+    assert result["embedding_text"] == ("Artificial intelligence helps teachers.")
     assert result["detected_language"] == "es"
     assert result["translated"] is True
     assert result["translation_failed"] is False
@@ -99,6 +95,7 @@ def test_chunk_preparation_preserves_original_order():
 
     original_prepare = module.prepare_text_for_embedding
     try:
+
         def fake_prepare(text):
             translated = next(translations)
             return {

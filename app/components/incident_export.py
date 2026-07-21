@@ -15,6 +15,7 @@ from src.db.incidents import (
     update_review_status,
 )
 
+
 def render_incident_export_panel(
     flags: Sequence[Mapping[str, Any]],
     *,
@@ -43,18 +44,22 @@ def render_incident_export_panel(
         key="incident_status_filter",
     )
     visible = [
-        i for i in incidents
+        i
+        for i in incidents
         if status_filter == "All" or i["review_status"] == status_filter
     ]
-    rows = [{
-        "Incident ID": i["incident_id"],
-        "Document A": i["document_a"],
-        "Document B": i["document_b"],
-        "Similarity": f"{i['similarity_score']:.1%}",
-        "Severity": i["severity_rank"],
-        "Review Status": i["review_status"],
-        "Date Flagged": i["date_flagged"],
-    } for i in visible]
+    rows = [
+        {
+            "Incident ID": i["incident_id"],
+            "Document A": i["document_a"],
+            "Document B": i["document_b"],
+            "Similarity": f"{i['similarity_score']:.1%}",
+            "Severity": i["severity_rank"],
+            "Review Status": i["review_status"],
+            "Date Flagged": i["date_flagged"],
+        }
+        for i in visible
+    ]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.markdown("#### Update review status")
