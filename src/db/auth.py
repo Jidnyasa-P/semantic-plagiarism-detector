@@ -143,3 +143,64 @@ def set_tour_completed(username: str, completed: bool = True) -> None:
             (1 if completed else 0, username.lower()),
         )
         conn.commit()
+def test_get_all_users():
+    username = uuid.uuid4().hex
+
+    add_user(username, "password123")
+
+    users = get_all_users()
+
+    usernames = [user["username"] for user in users]
+
+    assert username in usernames
+def test_verify_nonexistent_user():
+    assert verify_user("unknown_user", "password") is False
+def test_update_password_changes_password():
+    username = uuid.uuid4().hex
+
+    add_user(username, "oldpassword")
+
+    update_password(username, "newpassword")
+
+    assert verify_user(username, "oldpassword") is False
+    assert verify_user(username, "newpassword") is True
+def test_delete_nonexistent_user():
+    delete_user("does_not_exist")
+
+    assert get_user_role("does_not_exist") is None
+def test_default_admin_exists():
+    init_db()
+
+    assert verify_user("admin", "admin123") is True
+    assert get_user_role("admin") == "admin"
+def test_add_user_default_role():
+    username = uuid.uuid4().hex
+
+    add_user(username, "password123")
+
+    assert get_user_role(username) == "teacher"
+def test_add_user_custom_role():
+    username = uuid.uuid4().hex
+
+    add_user(username, "password123", "admin")
+
+    assert get_user_role(username) == "admin"
+def test_tour_completed():
+    username = uuid.uuid4().hex
+
+    add_user(username, "password123")
+
+    assert get_tour_completed(username) is False
+
+    set_tour_completed(username, True)
+
+    assert get_tour_completed(username) is True
+def test_reset_tour_completed():
+    username = uuid.uuid4().hex
+
+    add_user(username, "password123")
+
+    set_tour_completed(username, True)
+    set_tour_completed(username, False)
+
+    assert get_tour_completed(username) is False
