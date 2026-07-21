@@ -231,3 +231,10 @@ def get_documents_by_class(class_section: str) -> list:
             "SELECT filename FROM documents WHERE class_section = ?", (class_section,)
         ).fetchall()
     return [r[0] for r in rows]
+
+
+def get_embedding_count() -> int:
+    """Return the number of durable chunk embeddings in the corpus."""
+    with _connect() as conn:
+        row = conn.execute("SELECT COUNT(1) FROM chunks").fetchone()
+    return int(row[0]) if row else 0

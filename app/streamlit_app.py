@@ -46,7 +46,7 @@ from src.core.faiss_index import (
     find_plagiarised_chunks,
     search_similar_chunks,
     save_index,
-    load_index,
+    load_or_rebuild_index,
     build_index_from_matrix,
 )
 from src.core.webhook import send_plagiarism_alert
@@ -486,12 +486,37 @@ else:
             index_buffer = _io.BytesIO(cached_index_data)
             faiss_index = faiss.deserialize_index(faiss.read_index(index_buffer))
             registry = get_chunk_registry()
-        except Exception:
-            faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
-            registry = get_chunk_registry()
-    else:
-        faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
-        registry = get_chunk_registry()
+            st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
+        except Exception as e:
+            print(f"[Redis] Error loading cached index: {e}, falling back to disk")
+            from src.core.faiss_index import load_or_rebuild_index
+
+            faiss_index, registry, index_recovered = load_or_rebuild_index(_INDEX_PATH)
+
+            if index_recovered:
+                if faiss_index.ntotal:
+                    st.warning("FAISS index was missing, corrupted, or inconsistent and was "f"automatically rebuilt from {faiss_index.ntotal} stored vectors.")
+                else:
+                    st.info(
+                    "No stored embeddings were found. An empty FAISS index was "
+                    "initialized safely.")
+            else:
+                st.info(f"Loaded and validated the existing FAISS index with "f"{faiss_index.ntotal} vectors.")
+
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
+        # Try to load from Redis cache
+        cached_results = get_analysis_results(f"{SESSION_ID}:current")
+        if cached_results is not None:
+            st.session_state.analysis_results = cached_results
+
+    if "analysis_file_signature" not in st.session_state:
+        st.session_state.analysis_file_signature = None
+        # Try to load from Redis cache
+        cached_signature = get_session_state(SESSION_ID, "analysis_file_signature")
+        if cached_signature is not None:
+            st.session_state.analysis_file_signature = cached_signature
+    
 
     uploaded_files = st.file_uploader(
         "📂 Upload Assignments",
