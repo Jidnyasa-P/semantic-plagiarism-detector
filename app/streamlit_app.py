@@ -221,6 +221,25 @@ if not st.session_state.get("authenticated", False):
 # Get secure role for this active interaction
 user_role = st.session_state.get("role", "user")
 
+
+# ── Top-right Theme Toggle ───────────────────────────────────────────────────
+current_theme = get_theme_name()
+
+# Create a narrow right-aligned column for the theme toggle
+_, theme_col = st.columns([0.94, 0.06])
+
+with theme_col:
+    theme_icon = "☀️" if current_theme == "Dark" else "🌙"
+
+    if st.button(
+        theme_icon,
+        key="theme_toggle",
+    ):
+        new_theme = "Light" if current_theme == "Dark" else "Dark"
+        set_theme(new_theme)
+        st.rerun()
+
+
 # ── Sidebar (ROLE RESTRICTED Settings) ────────────────────────────────────────
 with st.sidebar:
     st.markdown(
@@ -235,18 +254,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    current_theme = get_theme_name()
-
-    selected_theme = st.radio(
-        "Theme",
-        options=["Light", "Dark"],
-        index=0 if current_theme == "Light" else 1,
-        horizontal=True,
-        key="theme_selector",
-    )
-    if selected_theme != current_theme:
-        set_theme(selected_theme)
-        st.rerun()
 
     # Only show administrative settings to ADMIN users
     if user_role == "admin":
