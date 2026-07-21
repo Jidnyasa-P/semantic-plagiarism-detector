@@ -1,5 +1,13 @@
+"""
+tests/visualization/test_network_graph.py
+-------------------------------------------
+Unit tests for plot_similarity_network edge cases.
+"""
+
+from unittest.mock import patch
 import pandas as pd
 import plotly.graph_objects as go
+import pytest
 from src.visualization.network_graph import plot_similarity_network
 
 
@@ -38,3 +46,40 @@ def test_plot_similarity_network_no_edges():
     assert isinstance(fig, go.Figure)
     # No shapes/lines should be added
     assert len(fig.layout.shapes) == 0
+
+
+def test_plot_similarity_network_single_document():
+    """Test graph generation when only one document is provided (1x1 matrix)."""
+    data = {"doc1": [1.0]}
+    df = pd.DataFrame(data, index=["doc1"])
+
+    fig = plot_similarity_network(df, threshold=0.75)
+
+    assert isinstance(fig, go.Figure)
+    # No edges should be created for a single document
+    assert len(fig.layout.shapes) == 0
+
+
+def test_plot_similarity_network_empty_dataframe():
+    """Test graph generation when an empty DataFrame is passed."""
+    df = pd.DataFrame()
+
+    fig = plot_similarity_network(df, threshold=0.75)
+
+    assert isinstance(fig, go.Figure)
+    assert len(fig.layout.shapes) == 0
+
+
+@patch("src.visualization.network_graph.go.Figure")
+def test_plot_similarity_network_mocked_plotly(mock_figure):
+    """Mock Plotly figure generation to verify execution without errors."""
+    data = {
+        "doc1": [1.0, 0.90],
+        "doc2": [0.90, 1.0],
+    }
+    df = pd.DataFrame(data, index=["doc1", "doc2"])
+
+    plot_similarity_network(df, threshold=0.75)
+
+    # Verify that the Figure constructor was invoked properly
+    assert mock_figure.called
