@@ -122,7 +122,10 @@ from src.db.auth import (
     get_all_users,
     delete_user,
     update_password,
+    get_tour_completed,
+    set_tour_completed,
 )
+from streamlit_tour import Tour
 
 # Initialize database
 init_db()
@@ -267,11 +270,13 @@ with st.sidebar:
             value=PLAGIARISM_THRESHOLD,
             step=0.01,
             help="Cosine similarity above which a pair is flagged. (Recommended: 0.59 based on benchmark evaluation)",
+            key="threshold_slider",
         )
         use_chunk_matrix = st.checkbox(
             "Use chunk-level similarity matrix",
             value=False,
             help="Use MAX chunk-pair similarity instead of mean doc vectors.",
+            key="chunk_matrix_checkbox",
         )
         faiss_top_k = st.slider(
             "FAISS: matches per chunk",
@@ -279,6 +284,7 @@ with st.sidebar:
             20,
             value=5,
             help="Nearest neighbours per chunk in FAISS search.",
+            key="faiss_top_k_slider",
         )
 
         with st.expander("🔤 OCR Settings", expanded=False):
@@ -337,6 +343,7 @@ with st.sidebar:
         unique_classes,
         index=0,
         help="Filter the analysis dashboard and similarity matrices by a specific class section.",
+        key="class_filter_selectbox",
     )
 
     st.markdown("---")
@@ -380,12 +387,60 @@ with st.sidebar:
         st.markdown("---")
 
     # Log out button
-    if st.button("🚪 Log Out", use_container_width=True):
+    if st.button("🚪 Log Out", use_container_width=True, key="logout_button"):
         for key in ["authenticated", "username", "role", "last_interaction"]:
             if key in st.session_state:
                 del st.session_state[key]
         # Clear Redis session data
         clear_session(SESSION_ID)
+        st.rerun()
+
+# ── Onboarding Tour for First-Time Admin Users ───────────────────────────────────
+if user_role == "admin" and not get_tour_completed(st.session_state.username):
+    username = st.session_state.username
+    
+    # Add a button to start the tour
+    if st.button("🎯 Start Guided Tour", key="start_tour_button", type="primary"):
+        st.session_state.show_tour = True
+    
+    # Show tour when triggered
+    if st.session_state.get("show_tour", False):
+        # Create tour steps
+        tour_steps = [
+            Tour.info(
+                title="👋 Welcome to the Plagiarism Detection System!",
+                desc="This guided tour will walk you through the key features to help you get started with detecting plagiarism in student assignments."
+            ),
+            Tour.bind("threshold_slider", 
+                      title="⚙️ Plagiarism Threshold",
+                      desc="Adjust the similarity threshold for flagging potential plagiarism. Higher values = stricter detection. Recommended: 0.59",
+                      side="right"),
+            Tour.bind("class_filter_selectbox",
+                      title="🔍 Class Filter",
+                      desc="Filter analysis results by specific class sections to focus on particular groups of students.",
+                      side="right"),
+            Tour.info(
+                title="📊 Analysis Dashboard",
+                desc="After uploading files, the system will analyze them and display similarity metrics, flagged pairs, and detailed comparisons in the tabs below."
+            ),
+            Tour.info(
+                title="🔬 Drill-Down Tab",
+                desc="Use the Pair Drill-Down tab to examine specific document pairs in detail, view matching text chunks, and understand the similarity scores."
+            ),
+            Tour.info(
+                title="🎉 You're All Set!",
+                desc="You can now start uploading assignments and detecting plagiarism. This tour won't appear again."
+            ),
+        ]
+        
+        # Create and start the tour
+        tour = Tour(steps=tour_steps)
+        tour.start()
+        
+        # Mark tour as completed
+        set_tour_completed(username, True)
+        st.session_state.show_tour = False
+        st.success("✅ Onboarding tour completed!")
         st.rerun()
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -580,6 +635,7 @@ else:
         type=["pdf"],
         accept_multiple_files=True,
         help="Upload 2 or more PDF files.",
+        key="file_uploader",
     )
 
     file_bytes_dict = {
