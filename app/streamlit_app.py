@@ -53,6 +53,7 @@ from src.core.similarity import (
     flag_plagiarism,
 )
 from src.core.text_chunking import chunk_documents
+from src.core.webhook import send_plagiarism_alert
 from src.db import (
     get_all_embeddings,
     get_chunk_registry,
@@ -694,6 +695,16 @@ else:
 
     active_sim_df = sim_df
     flags = flag_plagiarism(active_sim_df, threshold=threshold)
+
+    for flag in flags:
+        try:
+            send_plagiarism_alert(
+                doc_a=flag["doc_a"],
+                doc_b=flag["doc_b"],
+                similarity=float(flag["similarity"]),
+            )
+        except Exception:
+            pass
 
     # ── Summary Metrics ───────────────────────────────────────────────────────
 
