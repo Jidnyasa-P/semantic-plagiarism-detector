@@ -23,6 +23,7 @@ PLAGIARISM_THRESHOLD = 0.59
 
 # ── Validation helpers ─────────────────────────────────────────────────────────
 
+
 def _validated_batch_size(batch_size: Optional[int]) -> Optional[int]:
     """Return a safe integer batch size or None for unbatched execution."""
     if batch_size is None:
@@ -41,6 +42,7 @@ def _validated_batch_size(batch_size: Optional[int]) -> Optional[int]:
 
 
 # ── Document-level similarity ──────────────────────────────────────────────────
+
 
 def document_similarity_matrix(
     doc_embeddings: Dict[str, np.ndarray],
@@ -78,11 +80,11 @@ def document_similarity_matrix(
 
     matrix = np.zeros((n, n))
     if doc_vectors:
-        stacked = np.vstack(doc_vectors)           # (N, 384)
+        stacked = np.vstack(doc_vectors)  # (N, 384)
         safe_batch_size = _validated_batch_size(batch_size)
         if safe_batch_size is None:
-            sim = cosine_similarity(stacked)       # (N, N)
-            matrix = np.clip(sim, 0.0, 1.0)       # Numerical safety
+            sim = cosine_similarity(stacked)  # (N, N)
+            matrix = np.clip(sim, 0.0, 1.0)  # Numerical safety
         else:
             for start in range(0, n, safe_batch_size):
                 end = min(start + safe_batch_size, n)
@@ -95,10 +97,9 @@ def document_similarity_matrix(
 
 # ── Hybrid similarity (lexical + semantic) ─────────────────────────────────────
 
+
 def hybrid_similarity_matrix(
-    semantic_df: pd.DataFrame,
-    lexical_df: pd.DataFrame,
-    w: float = 0.7
+    semantic_df: pd.DataFrame, lexical_df: pd.DataFrame, w: float = 0.7
 ) -> pd.DataFrame:
     """
     Combine semantic and lexical similarity matrices using a weighted formula.
@@ -119,14 +120,19 @@ def hybrid_similarity_matrix(
     # Ensure both DataFrames have the same shape and index/columns
     if semantic_df.shape != lexical_df.shape:
         raise ValueError("Semantic and lexical matrices must have the same shape")
-    if not semantic_df.index.equals(lexical_df.index) or not semantic_df.columns.equals(lexical_df.columns):
-        raise ValueError("Semantic and lexical matrices must have the same index and columns")
+    if not semantic_df.index.equals(lexical_df.index) or not semantic_df.columns.equals(
+        lexical_df.columns
+    ):
+        raise ValueError(
+            "Semantic and lexical matrices must have the same index and columns"
+        )
 
     hybrid_df = w * semantic_df + (1 - w) * lexical_df
     return hybrid_df
 
 
 # ── Chunk-level similarity (local plagiarism detection) ────────────────────────
+
 
 def chunk_max_similarity(
     emb_a: np.ndarray,
@@ -154,7 +160,7 @@ def chunk_max_similarity(
 
     safe_batch_size = _validated_batch_size(batch_size)
     if safe_batch_size is None:
-        sim_matrix = cosine_similarity(emb_a, emb_b)    # (Na, Nb)
+        sim_matrix = cosine_similarity(emb_a, emb_b)  # (Na, Nb)
         return float(np.max(sim_matrix))
 
     max_score = 0.0
@@ -202,7 +208,7 @@ def chunk_similarity_matrix(
                     batch_size=batch_size,
                 )
                 matrix[i][j] = score
-                matrix[j][i] = score   # Symmetric
+                matrix[j][i] = score  # Symmetric
 
     df = pd.DataFrame(matrix, index=doc_names, columns=doc_names)
     return df
@@ -210,9 +216,9 @@ def chunk_similarity_matrix(
 
 # ── Plagiarism flagging ────────────────────────────────────────────────────────
 
+
 def flag_plagiarism(
-    similarity_df: pd.DataFrame,
-    threshold: float = PLAGIARISM_THRESHOLD
+    similarity_df: pd.DataFrame, threshold: float = PLAGIARISM_THRESHOLD
 ) -> List[Dict]:
     """
     Identify document pairs whose similarity exceeds the threshold.
@@ -233,16 +239,18 @@ def flag_plagiarism(
     n = len(doc_names)
 
     for i in range(n):
-        for j in range(i + 1, n):   # Upper triangle only (avoid duplicates)
+        for j in range(i + 1, n):  # Upper triangle only (avoid duplicates)
             score = similarity_df.iloc[i, j]
             if score >= threshold:
                 severity = "🔴 High" if score >= 0.90 else "🟡 Medium"
-                flags.append({
-                    "doc_a": doc_names[i],
-                    "doc_b": doc_names[j],
-                    "similarity": round(float(score), 4),
-                    "severity": severity,
-                })
+                flags.append(
+                    {
+                        "doc_a": doc_names[i],
+                        "doc_b": doc_names[j],
+                        "similarity": round(float(score), 4),
+                        "severity": severity,
+                    }
+                )
 
     # Sort by similarity descending
     flags.sort(key=lambda x: x["similarity"], reverse=True)
@@ -255,7 +263,7 @@ def find_most_similar_chunks(
     emb_a: np.ndarray,
     emb_b: np.ndarray,
     top_k: int = 3,
-    threshold: float = PLAGIARISM_THRESHOLD
+    threshold: float = PLAGIARISM_THRESHOLD,
 ) -> List[Tuple[str, str, float]]:
     """
     Find the top-K most similar chunk pairs between two documents.
@@ -276,7 +284,7 @@ def find_most_similar_chunks(
     if emb_a.size == 0 or emb_b.size == 0:
         return []
 
-    sim_matrix = cosine_similarity(emb_a, emb_b)   # (Na, Nb)
+    sim_matrix = cosine_similarity(emb_a, emb_b)  # (Na, Nb)
 
     # Flatten and sort
     pairs = []

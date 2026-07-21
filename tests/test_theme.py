@@ -1,4 +1,11 @@
-from app.theme import severity_tier, tier_from_severity_label, tier_color, badge_html, COLORS
+from app.theme import (
+    severity_tier,
+    tier_from_severity_label,
+    tier_color,
+    badge_html,
+    COLORS,
+)
+
 
 def test_severity_tier():
     # Test with threshold 0.75
@@ -14,6 +21,7 @@ def test_severity_tier():
     assert severity_tier(0.59, 0.59) == "medium"
     assert severity_tier(0.58, 0.59) == "low"
 
+
 def test_tier_from_severity_label():
     assert tier_from_severity_label("🔴 High") == "high"
     assert tier_from_severity_label("🟡 Medium") == "medium"
@@ -22,11 +30,13 @@ def test_tier_from_severity_label():
     assert tier_from_severity_label("Low") == "low"
     assert tier_from_severity_label("unknown") == "low"
 
+
 def test_tier_color():
     assert tier_color("high") == COLORS["danger"]
     assert tier_color("medium") == COLORS["warning"]
     assert tier_color("low") == COLORS["success"]
     assert tier_color("unknown") == COLORS["neutral_soft"]
+
 
 def test_badge_html_default():
     html = badge_html("high")
@@ -43,6 +53,7 @@ def test_badge_html_default():
     assert "background-color: " + COLORS["success_soft"] in html_low
     assert "color: " + COLORS["success"] in html_low
     assert "🟢 Low" in html_low
+
 
 def test_badge_html_custom_label():
     html = badge_html("high", "Similarity: 95.0%")

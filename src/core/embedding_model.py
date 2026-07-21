@@ -26,6 +26,7 @@ def _get_model_name() -> str:
     """Return the configured sentence-transformers model name."""
     return os.getenv("SEMANTIC_PLAGIARISM_MODEL", _DEFAULT_MODEL_NAME)
 
+
 def get_embedding_model_info() -> tuple[str, int]:
     """
     Return the active embedding model name and embedding dimension.
@@ -47,6 +48,7 @@ def _get_model() -> SentenceTransformer:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+
 def embed_chunks(chunks: List[str], batch_size: int = 64) -> np.ndarray:
     """
     Generate embeddings for a list of text chunks.
@@ -65,8 +67,8 @@ def embed_chunks(chunks: List[str], batch_size: int = 64) -> np.ndarray:
     embeddings = model.encode(
         chunks,
         batch_size=batch_size,
-        show_progress_bar=False,   # Keep console clean in Streamlit
-        normalize_embeddings=True, # L2-normalise → cosine sim = dot product
+        show_progress_bar=False,  # Keep console clean in Streamlit
+        normalize_embeddings=True,  # L2-normalise → cosine sim = dot product
     )
     return embeddings
 

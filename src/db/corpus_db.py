@@ -10,7 +10,9 @@ import os
 import numpy as np
 from datetime import datetime
 
-_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "corpus.db"))
+_DB_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "corpus.db")
+)
 
 
 def _connect() -> sqlite3.Connection:
@@ -33,7 +35,7 @@ def init_corpus_db() -> None:
                 assignment_title TEXT
             )
         """)
-        
+
         # Schema migration fallback logic: add missing columns if documents table already existed
         cursor = conn.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -62,7 +64,7 @@ def add_document(
     file_hash: str,
     class_section: str = None,
     student_name: str = None,
-    assignment_title: str = None
+    assignment_title: str = None,
 ) -> bool:
     """
     Insert a new document metadata row.
@@ -72,7 +74,14 @@ def add_document(
         with _connect() as conn:
             conn.execute(
                 "INSERT INTO documents (filename, file_hash, upload_date, class_section, student_name, assignment_title) VALUES (?, ?, ?, ?, ?, ?)",
-                (filename, file_hash, datetime.now().isoformat(), class_section, student_name, assignment_title)
+                (
+                    filename,
+                    file_hash,
+                    datetime.now().isoformat(),
+                    class_section,
+                    student_name,
+                    assignment_title,
+                ),
             )
             conn.commit()
         return True
@@ -102,7 +111,7 @@ def get_all_documents() -> list:
             "upload_date": r[2],
             "class_section": r[3],
             "student_name": r[4],
-            "assignment_title": r[5]
+            "assignment_title": r[5],
         }
         for r in rows
     ]
@@ -111,7 +120,7 @@ def get_all_documents() -> list:
 def add_chunks(chunks_to_add: list) -> None:
     """
     Insert a batch of chunks with their raw text and embedded BLOBs.
-    
+
     chunks_to_add: list of tuples: (vector_id, filename, chunk_index, chunk_text, embedding_np_array)
     """
     formatted_chunks = []
@@ -123,7 +132,7 @@ def add_chunks(chunks_to_add: list) -> None:
     with _connect() as conn:
         conn.executemany(
             "INSERT OR REPLACE INTO chunks (vector_id, filename, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?, ?)",
-            formatted_chunks
+            formatted_chunks,
         )
         conn.commit()
 
@@ -131,6 +140,7 @@ def add_chunks(chunks_to_add: list) -> None:
 def get_chunk_registry() -> list:
     """Reconstructs the registry of ChunkRecord objects ordered by vector_id."""
     from src.core.faiss_index import ChunkRecord
+
     with _connect() as conn:
         rows = conn.execute(
             "SELECT filename, chunk_index, chunk_text FROM chunks ORDER BY vector_id ASC"
@@ -141,11 +151,13 @@ def get_chunk_registry() -> list:
 def get_all_embeddings() -> np.ndarray:
     """Load all chunk embeddings from the database to rebuild the FAISS index."""
     with _connect() as conn:
-        rows = conn.execute("SELECT embedding FROM chunks ORDER BY vector_id ASC").fetchall()
-    
+        rows = conn.execute(
+            "SELECT embedding FROM chunks ORDER BY vector_id ASC"
+        ).fetchall()
+
     if not rows:
         return np.empty((0, 384), dtype=np.float32)
-        
+
     embeddings = [np.frombuffer(r[0], dtype=np.float32) for r in rows]
     return np.vstack(embeddings)
 
@@ -159,7 +171,7 @@ def delete_document(filename: str) -> None:
         # Delete document (triggers cascading delete on chunks)
         conn.execute("DELETE FROM documents WHERE filename = ?", (filename,))
         conn.commit()
-        
+
     # Re-index all remaining chunks so vector_ids are sequential [0, 1, ..., N-1]
     _compact_vector_ids()
 
@@ -171,16 +183,16 @@ def _compact_vector_ids() -> None:
         chunks = conn.execute(
             "SELECT filename, chunk_index, chunk_text, embedding FROM chunks ORDER BY vector_id ASC"
         ).fetchall()
-        
+
         # Clear chunks table
         conn.execute("DELETE FROM chunks")
-        
+
         # Insert them back with fresh sequential IDs starting at 0
         if chunks:
             formatted = [(i, r[0], r[1], r[2], r[3]) for i, r in enumerate(chunks)]
             conn.executemany(
                 "INSERT INTO chunks (vector_id, filename, chunk_index, chunk_text, embedding) VALUES (?, ?, ?, ?, ?)",
-                formatted
+                formatted,
             )
         conn.commit()
 
@@ -219,4 +231,3 @@ def get_documents_by_class(class_section: str) -> list:
             "SELECT filename FROM documents WHERE class_section = ?", (class_section,)
         ).fetchall()
     return [r[0] for r in rows]
-

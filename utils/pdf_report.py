@@ -363,8 +363,7 @@ def generate_plagiarism_report(
     else:
         for index, match in enumerate(matches, start=1):
             heading = (
-                f"Match {index} - paragraph similarity "
-                f"{match['similarity'] * 100:.1f}%"
+                f"Match {index} - paragraph similarity {match['similarity'] * 100:.1f}%"
             )
             story.append(Paragraph(heading, match_heading_style))
 
@@ -405,7 +404,13 @@ def generate_plagiarism_report(
                     [
                         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FCE7F3")),
                         ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#D0D5DD")),
-                        ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#E4E7EC")),
+                        (
+                            "INNERGRID",
+                            (0, 0),
+                            (-1, -1),
+                            0.35,
+                            colors.HexColor("#E4E7EC"),
+                        ),
                         ("VALIGN", (0, 0), (-1, -1), "TOP"),
                         ("LEFTPADDING", (0, 0), (-1, -1), 6),
                         ("RIGHTPADDING", (0, 0), (-1, -1), 6),

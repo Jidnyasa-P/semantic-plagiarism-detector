@@ -14,6 +14,7 @@ def test_invalid_language_returns_compatible_error_message():
     assert isinstance(result, str)
     assert "Translation Error" in result
 
+
 def test_translate_text_basic():
     # Translate a simple French sentence to English
     result = translate_text("Bonjour tout le monde", target_lang="en")

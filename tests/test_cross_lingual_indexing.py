@@ -1,6 +1,5 @@
 """Verifies that vectors use translated text while the registry keeps source text."""
 
-
 from src.core.cross_lingual import prepare_documents_for_embedding
 
 
@@ -15,9 +14,7 @@ def test_translation_indexing_contract(monkeypatch):
         return {
             "original_text": text,
             "embedding_text": (
-                "Artificial intelligence supports education."
-                if is_hindi
-                else text
+                "Artificial intelligence supports education." if is_hindi else text
             ),
             "detected_language": "hi" if is_hindi else "en",
             "translated": is_hindi,

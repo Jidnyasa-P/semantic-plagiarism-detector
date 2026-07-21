@@ -68,8 +68,7 @@ def test_long_paragraphs_generate_multiple_pages_without_layout_error():
 
 def test_only_top_three_matches_are_included():
     pairs = [
-        (f"left-{index}", f"right-{index}", 0.99 - index / 100)
-        for index in range(5)
+        (f"left-{index}", f"right-{index}", 0.99 - index / 100) for index in range(5)
     ]
 
     text = _read_text(

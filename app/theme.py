@@ -38,6 +38,8 @@ THEMES = {
 }
 # Backward-compatible default palette used by existing tests and callers.
 COLORS = THEMES["Light"]
+
+
 def initialize_theme() -> None:
     """Initialize the active theme for the current session."""
     if "theme" not in st.session_state:
@@ -59,6 +61,7 @@ def set_theme(theme_name: str) -> None:
 def get_colors() -> dict:
     """Return the colors for the active theme."""
     return THEMES[get_theme_name()]
+
 
 def inject_css() -> None:
     """Inject CSS for the currently selected Light or Dark theme."""
@@ -329,10 +332,11 @@ def inject_css() -> None:
 
     st.markdown(css, unsafe_allow_html=True)
 
+
 def severity_tier(score: float, threshold: float) -> str:
     """
     Categorizes the score into a severity tier matching the backend.
-    
+
     High: >= 0.90
     Medium: >= threshold
     Low: < threshold
@@ -344,6 +348,7 @@ def severity_tier(score: float, threshold: float) -> str:
     else:
         return "low"
 
+
 def tier_from_severity_label(label: str) -> str:
     """Maps existing label string to tier key."""
     clean = label.lower()
@@ -354,6 +359,7 @@ def tier_from_severity_label(label: str) -> str:
     else:
         return "low"
 
+
 def tier_color(tier: str) -> str:
     """Returns color hex associated with a tier."""
     if tier == "high":
@@ -363,6 +369,7 @@ def tier_color(tier: str) -> str:
     elif tier == "low":
         return get_colors()["success"]
     return get_colors()["neutral_soft"]
+
 
 def badge_html(tier: str, label: str = None) -> str:
     """Generates standard HTML badge chip for severity."""
@@ -378,7 +385,6 @@ def badge_html(tier: str, label: str = None) -> str:
         text_color = get_colors()["success"]
         bg_color = get_colors()["success_soft"]
         default_label = "🟢 Low"
-        
+
     display_label = label if label is not None else default_label
     return f'<span class="badge" style="background-color: {bg_color}; color: {text_color}; border: 1px solid {text_color};">{display_label}</span>'
-

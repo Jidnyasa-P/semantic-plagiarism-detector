@@ -2,10 +2,16 @@ import numpy as np
 import pytest
 from unittest.mock import patch, MagicMock
 import src.core.embedding_model as embedding_model
-from src.core.embedding_model import embed_chunks, embed_documents, get_document_embedding
+from src.core.embedding_model import (
+    embed_chunks,
+    embed_documents,
+    get_document_embedding,
+)
 
 
-def _mock_encode(texts, batch_size=64, show_progress_bar=False, normalize_embeddings=True):
+def _mock_encode(
+    texts, batch_size=64, show_progress_bar=False, normalize_embeddings=True
+):
     return np.random.rand(len(texts), 384).astype("float32")
 
 
@@ -29,7 +35,9 @@ def test_embed_chunks_empty():
 
 
 def test_embed_chunks_returns_float32(mock_model):
-    mock_model.encode.side_effect = lambda texts, **kw: np.ones((len(texts), 384), dtype="float32")
+    mock_model.encode.side_effect = lambda texts, **kw: np.ones(
+        (len(texts), 384), dtype="float32"
+    )
     result = embed_chunks(["test chunk"])
     assert result.dtype == np.float32
 
@@ -70,13 +78,17 @@ def test_get_model_uses_multilingual_default(monkeypatch):
     result = embedding_model._get_model()
 
     assert result is model
-    sentence_transformer.assert_called_once_with("paraphrase-multilingual-MiniLM-L12-v2")
+    sentence_transformer.assert_called_once_with(
+        "paraphrase-multilingual-MiniLM-L12-v2"
+    )
 
 
 def test_get_model_uses_environment_override(monkeypatch):
     model = MagicMock()
     sentence_transformer = MagicMock(return_value=model)
-    monkeypatch.setenv("SEMANTIC_PLAGIARISM_MODEL", "distiluse-base-multilingual-cased-v2")
+    monkeypatch.setenv(
+        "SEMANTIC_PLAGIARISM_MODEL", "distiluse-base-multilingual-cased-v2"
+    )
     monkeypatch.setattr(embedding_model, "_model", None)
     monkeypatch.setattr(embedding_model, "SentenceTransformer", sentence_transformer)
 

@@ -68,8 +68,7 @@ def filter_warnings(
     return [
         item
         for item in normalised
-        if query in item["doc_a"].casefold()
-        or query in item["doc_b"].casefold()
+        if query in item["doc_a"].casefold() or query in item["doc_b"].casefold()
     ]
 
 
@@ -93,6 +92,7 @@ def sort_warnings(
         def key(item: Mapping[str, Any]):
             value = item[field]
             return value.casefold() if isinstance(value, str) else value
+
         return key
 
     items.sort(key=key_for(secondary_field), reverse=secondary_descending)
@@ -240,15 +240,17 @@ def render_warning_controls(
     if current_page.page != st.session_state.warning_page:
         st.session_state.warning_page = current_page.page
 
-    export_df = pd.DataFrame([
-        {
-            "Document A": item["doc_a"],
-            "Document B": item["doc_b"],
-            "Similarity": item["similarity"],
-            "Severity": item["severity"],
-        }
-        for item in sorted_flags
-    ])
+    export_df = pd.DataFrame(
+        [
+            {
+                "Document A": item["doc_a"],
+                "Document B": item["doc_b"],
+                "Similarity": item["similarity"],
+                "Severity": item["severity"],
+            }
+            for item in sorted_flags
+        ]
+    )
 
     left, right = st.columns([3, 2])
     with left:

@@ -7,9 +7,24 @@ from utils.warning_list import (
 
 WARNINGS = [
     {"doc_a": "Zeta.pdf", "doc_b": "Alpha.pdf", "similarity": 0.91, "severity": "High"},
-    {"doc_a": "Beta.pdf", "doc_b": "Gamma.pdf", "similarity": 0.78, "severity": "Medium"},
-    {"doc_a": "Alpha.pdf", "doc_b": "Delta.pdf", "similarity": 0.91, "severity": "High"},
-    {"doc_a": "Notes.pdf", "doc_b": "Essay.pdf", "similarity": 0.81, "severity": "Medium"},
+    {
+        "doc_a": "Beta.pdf",
+        "doc_b": "Gamma.pdf",
+        "similarity": 0.78,
+        "severity": "Medium",
+    },
+    {
+        "doc_a": "Alpha.pdf",
+        "doc_b": "Delta.pdf",
+        "similarity": 0.91,
+        "severity": "High",
+    },
+    {
+        "doc_a": "Notes.pdf",
+        "doc_b": "Essay.pdf",
+        "similarity": 0.81,
+        "severity": "Medium",
+    },
 ]
 
 
@@ -42,13 +57,21 @@ def test_filename_sorting():
         primary_descending=False,
     )
     assert [item["doc_a"] for item in results] == [
-        "Alpha.pdf", "Beta.pdf", "Notes.pdf", "Zeta.pdf"
+        "Alpha.pdf",
+        "Beta.pdf",
+        "Notes.pdf",
+        "Zeta.pdf",
     ]
 
 
 def test_pagination_and_page_clamping():
     warnings = [
-        {"doc_a": f"A-{i}.pdf", "doc_b": f"B-{i}.pdf", "similarity": 0.8, "severity": "Medium"}
+        {
+            "doc_a": f"A-{i}.pdf",
+            "doc_b": f"B-{i}.pdf",
+            "similarity": 0.8,
+            "severity": "Medium",
+        }
         for i in range(23)
     ]
     page_two = paginate_warnings(warnings, page=2, page_size=10)

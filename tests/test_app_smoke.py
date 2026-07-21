@@ -11,6 +11,7 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _STALE_INDEX = os.path.join(_REPO_ROOT, "corpus.index")
 _STALE_DB = os.path.join(_REPO_ROOT, "corpus.db")
 
+
 def _cleanup_stale_artifacts():
     """Remove leftover FAISS index and SQLite DB from prior runs."""
     for path in (_STALE_INDEX, _STALE_DB):
@@ -20,6 +21,7 @@ def _cleanup_stale_artifacts():
         except PermissionError:
             pass  # File locked by another process (e.g. SQLite); safe to skip
 
+
 def generate_pdf(text: str) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf)
@@ -27,31 +29,36 @@ def generate_pdf(text: str) -> bytes:
     words = text.split()
     lines = []
     for i in range(0, len(words), 8):
-        lines.append(" ".join(words[i:i+8]))
-    
+        lines.append(" ".join(words[i: i + 8]))
+
     y = 750
     for line in lines:
         c.drawString(50, y, line)
         y -= 20
-        
+
     c.showPage()
     c.save()
     return buf.getvalue()
+
 
 def mock_embed_chunks(chunks, batch_size=64):
     if not chunks:
         return np.array([])
     # Return L2-normalised vectors of shape (len(chunks), 384)
     # 1.0 / sqrt(384) ensures L2 norm is 1.0.
-    val = 1.0 / (384 ** 0.5)
+    val = 1.0 / (384**0.5)
     return np.full((len(chunks), 384), val, dtype="float32")
+
 
 @pytest.fixture(autouse=True)
 def clean_smoke_test_env():
     import os
     from src.db.corpus_db import clear_all_data
+
     clear_all_data()
-    index_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "corpus.index"))
+    index_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "corpus.index")
+    )
     if os.path.exists(index_path):
         try:
             os.remove(index_path)
@@ -67,7 +74,10 @@ def clean_smoke_test_env():
 
 
 @patch("src.core.webhook.send_plagiarism_alert")
-@patch("src.core.embedding_model.get_embedding_model_info", return_value=("all-MiniLM-L6-v2", 384))
+@patch(
+    "src.core.embedding_model.get_embedding_model_info",
+    return_value=("all-MiniLM-L6-v2", 384),
+)
 @patch("src.core.embedding_model.embed_chunks", side_effect=mock_embed_chunks)
 def test_app_smoke(mock_embed, mock_model_info, mock_webhook):
     # Clean up stale artifacts from prior test runs
@@ -127,10 +137,17 @@ def test_app_smoke(mock_embed, mock_model_info, mock_webhook):
         # uploaded files are still in the widget state. After clicking FAISS,
         # AppTest resets the file uploader, causing the app to call st.stop()
         # before rendering the warnings tab — so we check the badge HERE.
-        high_severity_keywords = ("High", "🔴", "high", "CRITICAL", "Critical", "danger", "Danger")
+        high_severity_keywords = (
+            "High",
+            "🔴",
+            "high",
+            "CRITICAL",
+            "Critical",
+            "danger",
+            "Danger",
+        )
         badge_found = any(
-            any(kw in md.value for kw in high_severity_keywords)
-            for md in at.markdown
+            any(kw in md.value for kw in high_severity_keywords) for md in at.markdown
         )
         assert badge_found, "High plagiarism warning badge was not rendered"
 
