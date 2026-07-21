@@ -735,6 +735,32 @@ else:
         st.subheader("⚡ FAISS Vector Search")
         st.info(f"Index total: {faiss_index.ntotal} vectors.")
 
+        faiss_query = st.text_input(
+            "Query FAISS Index:",
+            placeholder="Type a text snippet to search vector index...",
+            key="faiss_query_input",
+        )
+        if st.button("🔍 Run FAISS Search", key="run_faiss_search_btn"):
+            if faiss_query.strip() and faiss_index is not None:
+                from src.core.embedding_model import embed_chunks
+
+                q_vec = embed_chunks([faiss_query.strip()])[0]
+                q_results = search_similar_chunks(
+                    q_vec,
+                    faiss_index,
+                    registry,
+                    top_k=faiss_top_k,
+                    threshold=threshold,
+                )
+                if q_results:
+                    for rec, score in q_results:
+                        st.markdown(
+                            f"**{rec.doc_name}** (Chunk #{rec.chunk_index}) — Similarity: `{score:.1%}`"
+                        )
+                        st.caption(rec.chunk_text)
+                else:
+                    st.info("No matching vector chunks found above threshold.")
+
     # ══ TAB 3: MATRIX ═════════════════════════════════════════════════════════
     with tab_matrix:
         st.subheader("📋 Similarity Matrix")
