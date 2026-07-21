@@ -51,3 +51,7 @@ httpx>=0.26.0                   # Async HTTP client for API testing
 pre-commit>=3.6.0               # Client-side Git hooks manager
 black>=24.1.0                   # Opinionated Python code formatter
 isort>=5.13.0                   # Import sorting library
+
+# ── Google Integration ─────────────────────────────────────────────────────────
+google-api-python-client>=2.100.0
+google-auth>=2.22.0
