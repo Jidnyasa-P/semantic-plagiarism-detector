@@ -1,19 +1,25 @@
+import sys
+import asyncio
+
+# Silence harmless Windows asyncio Proactor connection lost bugs
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 # ruff: noqa: E402
 
 import hashlib
-import sys
 import os
+import io as _io
+import time
+from datetime import datetime
+import numpy as np
+import pandas as pd
+import streamlit as st
+import base64
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-import io as _io
-import time
-import datetime
-import numpy as np
-import pandas as pd
-import streamlit as st
 from app.theme import (
     empty_state_html,
     format_similarity_html,
@@ -58,7 +64,7 @@ from src.db import (
     get_unique_class_sections,
     get_documents_by_class,
 )
-from src.utils.pdf_report import generate_plagiarism_report
+from src.utils.pdf_report import generate_plagiarism_report, highlight_pdf_matches
 from src.utils.badge_generator import (
     generate_badge_png,
     generate_badge_pdf,
@@ -105,6 +111,10 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
 SESSION_ID = st.session_state.session_id
+
+
+_BRANDING_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_config.json"))
+_BRANDING_LOGO_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "branding_logo.png"))
 _INDEX_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "corpus.index")
 )
@@ -113,10 +123,10 @@ try:
 except ImportError:
     Tour = None
 
-# Initialize database
+# Initialize auth database
 init_db()
 
-# Must be the first Streamlit command called
+# Page Configuration
 st.set_page_config(
     page_title="Semantic Plagiarism Detector",
     page_icon="🔍",
@@ -124,9 +134,20 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 inject_css()
+
 init_db()
 
-# ── SESSION TIMEOUT & ROUTE PROTECTION MIDDLEWARE ─────────────────────────────
+
+st.markdown(
+    """
+<style>
+    .block-container { padding-top: 2rem; }
+    .stAlert { border-radius: 8px; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+# ── SESSION TIMEOUT & ROUTE PROTECTION ────────────────────────────────────────
 TIMEOUT_LIMIT = 15 * 60  # 15 minutes in seconds
 
 cached_last_interaction = get_session_state(SESSION_ID, "last_interaction")
@@ -153,8 +174,8 @@ if last_interaction and st.session_state.get("authenticated", False):
 # Render Login UI if not authenticated
 if not st.session_state.get("authenticated", False):
     with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        username = st.text_input("Username", value="admin")
+        password = st.text_input("Password", type="password", value="admin")
         login_submitted = st.form_submit_button("Log In", use_container_width=True)
 
         if login_submitted:
@@ -169,16 +190,44 @@ if not st.session_state.get("authenticated", False):
                     st.session_state.username = username
                     st.session_state.role = role
                     st.session_state.last_interaction = time.time()
+
+                    cache_session_state(SESSION_ID, "authenticated", True)
+                    cache_session_state(SESSION_ID, "username", username)
+                    cache_session_state(SESSION_ID, "role", role)
+                    cache_session_state(SESSION_ID, "last_interaction", time.time())
+
+                    st.success(f"Welcome back, {username}!")
+
                     st.rerun()
             else:
+
                 st.error("Invalid username or password.")
     st.stop()
+    st.error("Invalid username or password. Try admin / admin123")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+# Active user role
 
 user_role = st.session_state.get("role", "user")
 
-# ── Sidebar (ROLE RESTRICTED Settings) ────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
+
+
+
+    selected_theme = st.radio(
+        "Theme",
+        options=["Light", "Dark"],
+        index=0 if current_theme == "Light" else 1,
+        horizontal=True,
+        key="theme_selector",
+    )
+    if selected_theme != current_theme:
+        set_theme(selected_theme)
+        st.rerun()
+
 
     if user_role == "admin":
         threshold = st.slider(
@@ -187,6 +236,9 @@ with st.sidebar:
             0.99,
             value=PLAGIARISM_THRESHOLD,
             step=0.01,
+          
+            help="Cosine similarity threshold for flagging.",
+
             key="threshold_slider",
         )
         use_chunk_matrix = st.checkbox(
@@ -201,6 +253,7 @@ with st.sidebar:
             value=5,
             key="faiss_top_k_slider",
         )
+
 
         # ── Customizable Chunk Size & Overlap Sliders (#153) ─────────────────
         st.markdown("### ✂️ Chunking Settings")
@@ -225,6 +278,31 @@ with st.sidebar:
 
         ocr_language = DEFAULT_OCR_LANGUAGE
         ocr_dpi = DEFAULT_OCR_DPI
+
+        with st.expander("🔤 OCR Settings", expanded=False):
+            ocr_language_labels = {
+                display_name: code
+                for code, display_name in SUPPORTED_OCR_LANGUAGES.items()
+            }
+            language_names = list(ocr_language_labels)
+            default_language_name = SUPPORTED_OCR_LANGUAGES[DEFAULT_OCR_LANGUAGE]
+            selected_ocr_language_name = st.selectbox(
+                "OCR Language",
+                options=language_names,
+                index=language_names.index(default_language_name),
+                key="ocr_language_selector",
+            )
+            ocr_language = ocr_language_labels[selected_ocr_language_name]
+
+            ocr_dpi = st.slider(
+                "OCR DPI Resolution",
+                min_value=150,
+                max_value=400,
+                value=DEFAULT_OCR_DPI,
+                step=25,
+                key="ocr_dpi_slider",
+            )
+
     else:
         threshold = PLAGIARISM_THRESHOLD
         use_chunk_matrix = False
@@ -235,6 +313,7 @@ with st.sidebar:
         ocr_dpi = DEFAULT_OCR_DPI
 
     unique_classes = ["All Classes"] + get_unique_class_sections()
+
     selected_class = st.selectbox("Select Class/Section", unique_classes, index=0)
 
 # ── Main UI ───────────────────────────────────────────────────────────────────
@@ -341,3 +420,236 @@ flags = flag_plagiarism(active_sim_df, threshold=threshold)
 
 st.subheader("📊 Analysis Summary")
 st.write(f"Processed **{len(raw_texts)}** documents with Chunk Size: `{chunk_size}` and Overlap: `{chunk_overlap}`.")
+
+    selected_class = st.selectbox(
+        "Select Class/Section",
+        unique_classes,
+        index=0,
+        key="class_filter_selectbox",
+    )
+
+    if user_role == "admin":
+        st.markdown("---")
+        st.markdown("### 📁 Document Management")
+        existing_docs = get_all_documents()
+        if existing_docs:
+            st.write(f"**{len(existing_docs)}** documents in database")
+            for doc in existing_docs:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(f"📄 {doc['filename']}")
+                with col2:
+                    if st.button("🗑️", key=f"del_{doc['filename']}"):
+                        delete_document(doc["filename"])
+                        embeddings_matrix = get_all_embeddings()
+                        if embeddings_matrix.size > 0:
+                            new_index = build_index_from_matrix(embeddings_matrix)
+                            save_index(new_index, _INDEX_PATH)
+                        else:
+                            if os.path.exists(_INDEX_PATH):
+                                os.remove(_INDEX_PATH)
+                        st.rerun()
+
+    st.markdown("---")
+    if st.button("🚪 Log Out", use_container_width=True, key="logout_button"):
+        for key in ["authenticated", "username", "role", "last_interaction"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        clear_session(SESSION_ID)
+        st.rerun()
+
+# ── Main Header ───────────────────────────────────────────────────────────────
+st.title("🔍 Semantic Plagiarism Detection System")
+st.markdown(
+    "Upload student PDF, DOCX, or TXT files. Detects **semantic similarity** "
+    "using transformer embeddings + **FAISS vector search**."
+)
+st.divider()
+
+if user_role != "admin":
+    # STUDENT PORTAL VIEW
+    st.subheader("🔎 Secure Student Search Portal")
+    query_text = st.text_area("Paste a text snippet to check against index:", height=150)
+    if st.button("🔍 Run Quick Verification", key="user_query") and query_text.strip():
+        # Search logic
+        st.info("Query processed.")
+else:
+    # ADMIN FULL ACCESS VIEW
+    cached_index_data = get_faiss_index("corpus_index")
+    if cached_index_data is not None and os.path.exists(_INDEX_PATH):
+        try:
+            import faiss
+            index_buffer = _io.BytesIO(cached_index_data)
+            faiss_index = faiss.deserialize_index(faiss.read_index(index_buffer))
+            registry = get_chunk_registry()
+        except Exception:
+            faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
+            registry = get_chunk_registry()
+    else:
+        faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
+        registry = get_chunk_registry()
+
+    uploaded_files = st.file_uploader(
+        "📂 Upload Assignments",
+        type=["pdf", "docx", "txt"],
+        accept_multiple_files=True,
+        key="file_uploader",
+    )
+
+    file_bytes_dict = {}
+    if uploaded_files:
+        for f in uploaded_files:
+            file_bytes_dict[f.name] = f.read()
+            f.seek(0)
+
+    if not uploaded_files or len(uploaded_files) < 2:
+        st.markdown(
+            empty_state_html(
+                "Waiting for Files",
+                "Please upload at least 2 PDF, DOCX, or TXT assignments to begin analysis.",
+                "📂",
+            ),
+            unsafe_allow_html=True,
+        )
+        st.stop()
+
+    # Process files pipeline
+    raw_texts = {}
+    for name, data in file_bytes_dict.items():
+        raw_texts[name] = extract_text(_io.BytesIO(data), name, ocr_language=ocr_language, ocr_dpi=ocr_dpi)
+
+    chunked_docs = chunk_documents(raw_texts)
+    embeddings = embed_documents(chunked_docs)
+    sim_df = document_similarity_matrix(embeddings)
+    faiss_index, registry = build_index(embeddings, chunked_docs)
+    ai_probabilities = detect_documents_ai_probability(chunked_docs)
+
+    active_sim_df = sim_df
+    flags = flag_plagiarism(active_sim_df, threshold=threshold)
+
+    # ── Summary Metrics ───────────────────────────────────────────────────────
+    st.subheader("📊 Analysis Summary")
+    doc_names = list(raw_texts.keys())
+    n_docs = len(doc_names)
+    total_pairs = n_docs * (n_docs - 1) // 2 if n_docs > 1 else 0
+    n_flagged = len(flags)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📄 Documents", n_docs)
+    col2.metric("🔗 Pairs", total_pairs)
+    col3.metric("🚨 Flagged", n_flagged)
+    col4.metric("🗂️ FAISS Vectors", faiss_index.ntotal if faiss_index is not None else 0)
+    st.divider()
+
+    # ── Application Tabs ──────────────────────────────────────────────────────
+    tab_warnings, tab_faiss, tab_matrix, tab_heatmap, tab_drill, tab_users = st.tabs(
+        [
+            "⚠️ Plagiarism Warnings",
+            "⚡ FAISS Chunk Search",
+            "📋 Similarity Matrix",
+            "🗺️ Heatmap",
+            "🔬 Pair Drill-Down",
+            "👥 User Management",
+        ]
+    )
+
+    # ══ TAB 1: WARNINGS ═══════════════════════════════════════════════════════
+    with tab_warnings:
+        st.subheader("⚠️ Plagiarism Warnings")
+        render_warning_controls(flags, threshold=threshold, ai_probabilities=ai_probabilities)
+
+    # ══ TAB 2: FAISS ══════════════════════════════════════════════════════════
+    with tab_faiss:
+        st.subheader("⚡ FAISS Vector Search")
+        st.info(f"Index total: {faiss_index.ntotal} vectors.")
+
+    # ══ TAB 3: MATRIX ═════════════════════════════════════════════════════════
+    with tab_matrix:
+        st.subheader("📋 Similarity Matrix")
+        st.dataframe(active_sim_df.style.format("{:.4f}"), use_container_width=True)
+
+    # ══ TAB 4: HEATMAP ════════════════════════════════════════════════════════
+    with tab_heatmap:
+        st.subheader("🗺️ Similarity Heatmap")
+        heatmap_fig = plot_similarity_heatmap(
+            active_sim_df, title="Document Semantic Similarity", threshold=threshold, theme_colors=get_colors()
+        )
+        st.pyplot(heatmap_fig, use_container_width=True)
+
+    # ══ TAB 5: PAIR DRILL-DOWN (#145 Feature Included) ════════════════════════
+    with tab_drill:
+        st.subheader("🔬 Pair Drill-Down")
+        c1, c2 = st.columns(2)
+        with c1:
+            doc_a = st.selectbox("Document A", doc_names, index=0, key="da")
+        with c2:
+            doc_b = st.selectbox("Document B", [d for d in doc_names if d != doc_a], index=0, key="db")
+
+        score = float(active_sim_df.loc[doc_a, doc_b])
+        st.markdown(f"**Overall Similarity:** `{score:.1%}`")
+        st.progress(float(score))
+        st.divider()
+
+        drill_tab_analysis, drill_tab_viewer = st.tabs(
+            ["📊 Chunk Matches & Report", "📄 Document Viewer"]
+        )
+
+        chunks_a = chunked_docs.get(doc_a, [])
+        chunks_b = chunked_docs.get(doc_b, [])
+
+        with drill_tab_analysis:
+            top_pairs = find_most_similar_chunks(
+                chunks_a, chunks_b, embeddings[doc_a], embeddings[doc_b], top_k=5, threshold=threshold
+            )
+            for rank, (ca, cb, sim) in enumerate(top_pairs, 1):
+                with st.expander(f"#{rank} — Similarity: {sim:.1%}"):
+                    st.write(f"**{doc_a}:** {ca}")
+                    st.write(f"**{doc_b}:** {cb}")
+
+        # --- In-App PDF Preview with Highlighted Matches (#145) ---
+        with drill_tab_viewer:
+            st.subheader("📄 In-App PDF Preview with Highlighted Matches")
+            selected_view_doc = st.radio(
+                "Select Document to Preview:",
+                options=[doc_a, doc_b],
+                horizontal=True,
+                key="doc_viewer_select",
+            )
+
+            # Retrieve file bytes directly from uploaded files dict
+            doc_source = file_bytes_dict.get(selected_view_doc)
+            matching_chunks_to_highlight = chunks_a if selected_view_doc == doc_a else chunks_b
+
+            if doc_source and str(selected_view_doc).lower().endswith(".pdf"):
+                with st.spinner("Generating highlighted PDF preview..."):
+                    try:
+                        highlighted_pdf_bytes = highlight_pdf_matches(
+                            pdf_source=doc_source,
+                            matching_chunks=matching_chunks_to_highlight,
+                        )
+
+                        base64_pdf = base64.b64encode(highlighted_pdf_bytes).decode("utf-8")
+                        pdf_display = f"""
+                            <iframe 
+                                src="data:application/pdf;base64,{base64_pdf}" 
+                                width="100%" 
+                                height="850px" 
+                                type="application/pdf">
+                            </iframe>
+                        """
+                        st.markdown(pdf_display, unsafe_allow_html=True)
+                    except Exception as err:
+                        st.error(f"Unable to render PDF preview: {str(err)}")
+            else:
+                st.info(f"PDF Preview is only available for uploaded `.pdf` files.")
+
+    # ══ TAB 6: USERS ══════════════════════════════════════════════════════════
+    with tab_users:
+        st.subheader("👥 User Management")
+        users = get_all_users()
+        if users:
+            st.dataframe(pd.DataFrame(users), use_container_width=True)
+
+# ── Footer ────────────────────────────────────────────────────────────────────
+st.divider()
+st.caption("🎓 Semantic Plagiarism Detection System · Streamlit")
