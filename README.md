@@ -290,6 +290,64 @@ Results are **cached by Streamlit** — re-uploading the same files is instant.
 
 ---
 
+## 🌐 REST API for External LMS Integrations
+
+Expose a secure FastAPI endpoint for Learning Management Systems (Canvas, Moodle, Blackboard) to scan student submissions programmatically.
+
+### Start the REST API Server
+
+```bash
+uvicorn src.api.app:app --reload --port 8000
+```
+
+### Endpoints
+
+| Endpoint | Method | Auth | Description |
+|---|---|---|---|
+| `/health` | `GET` | None | API health and readiness check |
+| `/api/v1/scan` | `POST` | Bearer Token | Scan a document (`.pdf`, `.docx`, `.txt`) against the indexed corpus |
+
+### Example Request (`curl`)
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/scan?threshold=0.59" \
+  -H "Authorization: Bearer dev-bearer-token" \
+  -F "file=@student_essay.pdf"
+```
+
+### Example Response (`JSON`)
+
+```json
+{
+  "filename": "student_essay.pdf",
+  "word_count": 480,
+  "chunk_count": 5,
+  "plagiarism_flagged": true,
+  "threshold_used": 0.59,
+  "overall_document_similarity": 0.8523,
+  "max_chunk_similarity": 0.9125,
+  "matched_documents_count": 1,
+  "matched_documents": [
+    {
+      "filename": "course_source_material.pdf",
+      "document_similarity_score": 0.8523,
+      "max_chunk_similarity_score": 0.9125,
+      "severity": "🔴 High",
+      "flagged_chunks": [
+        {
+          "uploaded_chunk": "Artificial Intelligence is rapidly reshaping higher education...",
+          "matched_chunk": "AI models are transforming modern academic institutions...",
+          "similarity_score": 0.9125
+        }
+      ]
+    }
+  ]
+}
+```
+
+
+---
+
 ## 📦 Dependencies
 
 | Library | Purpose |
