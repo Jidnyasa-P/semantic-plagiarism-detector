@@ -101,6 +101,10 @@ from src.db.auth import (
     get_tour_completed,
     set_tour_completed,
 )
+try:
+    from src.utils.excel_export import export_similarity_matrix_to_excel
+except ImportError:
+    from utils.excel_export import export_similarity_matrix_to_excel
 
 # Initialize corpus database
 init_corpus_db()
@@ -566,7 +570,55 @@ else:
     # ══ TAB 3: MATRIX ═════════════════════════════════════════════════════════
     with tab_matrix:
         st.subheader("📋 Similarity Matrix")
+
+        if active_sim_df is None:
+            st.markdown(
+                empty_state_html(
+                    "No Similarity Matrix",
+                    "Ensure at least 2 documents are uploaded to compute similarities.",
+                    "📋",
+                ),
+                unsafe_allow_html=True,
+            )
+        else:
+
+            def _highlight(val: Any) -> str:
+                numeric_val = float(val)
+                if numeric_val >= 0.90:
+                    return "background-color:#ff4b4b;color:white;font-weight:bold;"
+                elif numeric_val >= threshold:
+                    return "background-color:#ffa500;color:white;font-weight:bold;"
+                return ""
+
+            styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)
+            st.dataframe(styled_df, use_container_width=True)
+
+            # Export options row
+            col_csv, col_excel = st.columns(2)
+
+            with col_csv:
+                st.download_button(
+                    "⬇️ Download CSV",
+                    active_sim_df.to_csv().encode("utf-8"),
+                    "similarity_matrix.csv",
+                    "text/csv",
+                    use_container_width=True,
+                )
+
+            with col_excel:
+                excel_data = export_similarity_matrix_to_excel(
+                    active_sim_df, threshold=threshold
+                )
+                st.download_button(
+                    "📊 Export as Styled Excel (.xlsx)",
+                    excel_data,
+                    "similarity_matrix_styled.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+
         st.dataframe(active_sim_df.style.format("{:.4f}"), use_container_width=True)
+
 
     # ══ TAB 4: HEATMAP ════════════════════════════════════════════════════════
     with tab_heatmap:
