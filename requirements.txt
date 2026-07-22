@@ -20,6 +20,8 @@ Pillow>=10.0.0                   # Image processing library
 # ── Web UI ────────────────────────────────────────────────────────────────────
 streamlit>=1.35.0                # Dashboard framework
 bcrypt>=4.0.0                    # Password hashing for auth
+pyotp>=2.9.0                     # TOTP generator/verifier for 2FA
+qrcode>=7.4.2                    # Local QR code generator for 2FA setup
 python-dotenv>=1.0.0             # Load credentials from .env
 plotly>=5.20.0                   # Interactive heatmap with hover values
 deep-translator>=1.11.4          # Translation alignment for cross-lingual support

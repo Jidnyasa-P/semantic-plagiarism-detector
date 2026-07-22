@@ -48,18 +48,28 @@ def init_db() -> None:
                 username TEXT    UNIQUE NOT NULL,
                 password TEXT    NOT NULL,
                 role     TEXT    NOT NULL DEFAULT 'teacher',
-                tour_completed INTEGER DEFAULT 0
+                tour_completed INTEGER DEFAULT 0,
+                otp_secret TEXT DEFAULT NULL,
+                two_factor_enabled INTEGER DEFAULT 0
             )
         """
         )
         conn.commit()
 
-        # Schema migration: add tour_completed column if it doesn't exist
+        # Schema migration: add tour_completed, otp_secret, two_factor_enabled columns if they don't exist
         cursor = conn.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in cursor.fetchall()]
         if "tour_completed" not in columns:
             conn.execute(
                 "ALTER TABLE users ADD COLUMN tour_completed INTEGER DEFAULT 0"
+            )
+            conn.commit()
+        if "otp_secret" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN otp_secret TEXT DEFAULT NULL")
+            conn.commit()
+        if "two_factor_enabled" not in columns:
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN two_factor_enabled INTEGER DEFAULT 0"
             )
             conn.commit()
 
@@ -148,5 +158,37 @@ def set_tour_completed(username: str, completed: bool = True) -> None:
         conn.execute(
             "UPDATE users SET tour_completed = ? WHERE username = ?",
             (1 if completed else 0, username.lower()),
+        )
+        conn.commit()
+
+
+def get_2fa_status(username: str) -> tuple[bool, str | None]:
+    """Return (two_factor_enabled, otp_secret) for a user."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT two_factor_enabled, otp_secret FROM users WHERE username = ?",
+            (username.lower(),),
+        ).fetchone()
+    if not row:
+        return False, None
+    return bool(row[0]), row[1]
+
+
+def enable_2fa(username: str, secret: str) -> None:
+    """Enable 2FA for a user and store their OTP secret."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET two_factor_enabled = 1, otp_secret = ? WHERE username = ?",
+            (secret, username.lower()),
+        )
+        conn.commit()
+
+
+def disable_2fa(username: str) -> None:
+    """Disable 2FA for a user and clear their OTP secret."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET two_factor_enabled = 0, otp_secret = NULL WHERE username = ?",
+            (username.lower(),),
         )
         conn.commit()

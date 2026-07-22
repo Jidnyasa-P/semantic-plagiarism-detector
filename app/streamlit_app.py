@@ -61,7 +61,15 @@ from src.db import (
     get_unique_class_sections,
     init_corpus_db,
 )
-from src.db.auth import get_all_users, get_user_role, init_db, verify_user
+from src.db.auth import (
+    disable_2fa,
+    enable_2fa,
+    get_2fa_status,
+    get_all_users,
+    get_user_role,
+    init_db,
+    verify_user,
+)
 from src.utils.pdf_report import highlight_pdf_matches
 from src.utils.redis_cache import (
     cache_session_state,
@@ -158,6 +166,63 @@ if last_interaction and st.session_state.get("authenticated", False):
 
 # Render Login UI if not authenticated
 if not st.session_state.get("authenticated", False):
+    if st.session_state.get("pending_2fa", False):
+        with st.form("otp_form"):
+            st.subheader("🔒 Two-Factor Authentication")
+            st.info(
+                "Enter the 6-digit verification token from your Google Authenticator/Authy app."
+            )
+            otp_code = st.text_input(
+                "Verification Code", max_chars=6, key="login_otp_code"
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                verify_submitted = st.form_submit_button(
+                    "Verify", use_container_width=True
+                )
+            with col2:
+                cancel_submitted = st.form_submit_button(
+                    "Cancel", use_container_width=True
+                )
+
+            if verify_submitted:
+                username = st.session_state.get("pending_username")
+                enabled, otp_secret = get_2fa_status(username)
+                if enabled and otp_secret:
+                    import pyotp
+
+                    totp = pyotp.TOTP(otp_secret)
+                    if totp.verify(otp_code.strip()):
+                        role = st.session_state.get("pending_role")
+                        st.session_state.authenticated = True
+                        st.session_state.username = username
+                        st.session_state.role = role
+                        st.session_state.last_interaction = time.time()
+
+                        cache_session_state(SESSION_ID, "authenticated", True)
+                        cache_session_state(SESSION_ID, "username", username)
+                        cache_session_state(SESSION_ID, "role", role)
+                        cache_session_state(SESSION_ID, "last_interaction", time.time())
+
+                        # Clear pending state
+                        del st.session_state["pending_2fa"]
+                        del st.session_state["pending_username"]
+                        del st.session_state["pending_role"]
+
+                        st.success(f"Welcome back, {username}!")
+                        st.rerun()
+                    else:
+                        st.error("Invalid verification code. Please try again.")
+                else:
+                    st.error("2FA configuration error. Please contact admin.")
+
+            if cancel_submitted:
+                del st.session_state["pending_2fa"]
+                del st.session_state["pending_username"]
+                del st.session_state["pending_role"]
+                st.rerun()
+        st.stop()
+
     with st.form("login_form"):
         username = st.text_input("Username", value="admin")
         password = st.text_input("Password", type="password", value="admin")
@@ -171,25 +236,28 @@ if not st.session_state.get("authenticated", False):
             elif verify_user(username, password):
                 role = get_user_role(username)
                 if role is not None:
-                    st.session_state.authenticated = True
-                    st.session_state.username = username
-                    st.session_state.role = role
-                    st.session_state.last_interaction = time.time()
+                    # Check if 2FA is enabled for this user
+                    enabled, otp_secret = get_2fa_status(username)
+                    if enabled:
+                        st.session_state.pending_2fa = True
+                        st.session_state.pending_username = username
+                        st.session_state.pending_role = role
+                        st.rerun()
+                    else:
+                        st.session_state.authenticated = True
+                        st.session_state.username = username
+                        st.session_state.role = role
+                        st.session_state.last_interaction = time.time()
 
-                    cache_session_state(SESSION_ID, "authenticated", True)
-                    cache_session_state(SESSION_ID, "username", username)
-                    cache_session_state(SESSION_ID, "role", role)
-                    cache_session_state(SESSION_ID, "last_interaction", time.time())
+                        cache_session_state(SESSION_ID, "authenticated", True)
+                        cache_session_state(SESSION_ID, "username", username)
+                        cache_session_state(SESSION_ID, "role", role)
+                        cache_session_state(SESSION_ID, "last_interaction", time.time())
 
-                    st.success(f"Welcome back, {username}!")
-
-                    st.rerun()
+                        st.success(f"Welcome back, {username}!")
+                        st.rerun()
             else:
-
                 st.error("Invalid username or password.")
-    st.stop()
-    st.error("Invalid username or password. Try admin / admin123")
-    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 
@@ -918,6 +986,130 @@ else:
         users = get_all_users()
         if users:
             st.dataframe(pd.DataFrame(users), use_container_width=True)
+
+        st.write("---")
+        st.subheader("🔐 Two-Factor Authentication (2FA)")
+
+        current_user = st.session_state.get("username", "admin")
+        enabled, otp_secret = get_2fa_status(current_user)
+
+        if enabled:
+            st.success(
+                "✔️ Two-Factor Authentication is currently **enabled** for your account."
+            )
+            with st.expander("Deactivate Two-Factor Authentication", expanded=False):
+                st.warning(
+                    "⚠️ Disabling 2FA will lower your account security. Please confirm by entering your 6-digit verification code."
+                )
+                with st.form("disable_2fa_form"):
+                    disable_code = st.text_input(
+                        "Verification Code", max_chars=6, key="disable_2fa_code"
+                    )
+                    submit_disable = st.form_submit_button(
+                        "Disable 2FA", use_container_width=True
+                    )
+                    if submit_disable:
+                        import pyotp
+
+                        totp = pyotp.TOTP(otp_secret)
+                        if totp.verify(disable_code.strip()):
+                            disable_2fa(current_user)
+                            st.success("Two-factor authentication has been disabled.")
+                            st.rerun()
+                        else:
+                            st.error("Invalid verification code. 2FA remains enabled.")
+        else:
+            st.info(
+                "🔒 Two-Factor Authentication (2FA) is currently **disabled** for your account. We highly recommend enabling it."
+            )
+
+            if not st.session_state.get("show_2fa_setup", False):
+                if st.button("Setup 2FA", use_container_width=True):
+                    st.session_state.show_2fa_setup = True
+                    import pyotp
+
+                    # Generate a new random secret
+                    st.session_state.temp_2fa_secret = pyotp.random_base32()
+                    st.rerun()
+            else:
+                temp_secret = st.session_state.get("temp_2fa_secret")
+                if temp_secret:
+                    import pyotp
+
+                    totp = pyotp.TOTP(temp_secret)
+                    provisioning_uri = totp.provisioning_uri(
+                        name=current_user, issuer_name="PlagiarismDetector"
+                    )
+
+                    st.markdown("### ⚙️ Step 1: Scan this QR Code")
+                    st.write(
+                        "Scan this QR code with your authenticator app (e.g., Google Authenticator, Authy)."
+                    )
+
+                    # Generate QR code offline using qrcode library
+                    from io import BytesIO
+
+                    import qrcode
+
+                    qr = qrcode.QRCode(version=1, box_size=5, border=3)
+                    qr.add_data(provisioning_uri)
+                    qr.make(fit=True)
+                    img = qr.make_image(fill_color="black", back_color="white")
+                    buf = BytesIO()
+                    img.save(buf, format="PNG")
+                    qr_bytes = buf.getvalue()
+
+                    col1, col2 = st.columns([1, 2])
+                    with col1:
+                        st.image(qr_bytes, width=250)
+                    with col2:
+                        st.markdown("**Manual Setup Details:**")
+                        st.code(f"Account: {current_user}")
+                        st.code(f"Secret Key: {temp_secret}")
+                        st.caption(
+                            "If your app does not support scanning QR codes, enter the secret key manually."
+                        )
+
+                    st.markdown("### ⚙️ Step 2: Verify and Enable 2FA")
+                    st.write(
+                        "Enter the 6-digit code shown in your authenticator app to complete setup."
+                    )
+
+                    with st.form("verify_2fa_setup_form"):
+                        setup_code = st.text_input(
+                            "6-digit Code", max_chars=6, key="setup_2fa_code"
+                        )
+                        col_btn1, col_btn2 = st.columns(2)
+                        with col_btn1:
+                            submit_setup = st.form_submit_button(
+                                "Verify and Enable", use_container_width=True
+                            )
+                        with col_btn2:
+                            cancel_setup = st.form_submit_button(
+                                "Cancel Setup", use_container_width=True
+                            )
+
+                        if submit_setup:
+                            if totp.verify(setup_code.strip()):
+                                enable_2fa(current_user, temp_secret)
+                                # Clean up session state
+                                st.session_state.show_2fa_setup = False
+                                if "temp_2fa_secret" in st.session_state:
+                                    del st.session_state.temp_2fa_secret
+                                st.success(
+                                    "🎉 Two-Factor Authentication has been successfully enabled!"
+                                )
+                                st.rerun()
+                            else:
+                                st.error(
+                                    "Invalid verification code. Please check the code in your app and try again."
+                                )
+
+                        if cancel_setup:
+                            st.session_state.show_2fa_setup = False
+                            if "temp_2fa_secret" in st.session_state:
+                                del st.session_state.temp_2fa_secret
+                            st.rerun()
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.divider()
