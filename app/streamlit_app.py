@@ -6,7 +6,6 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 # ruff: noqa: E402
 
-import os
 import base64
 import io as _io
 import os
@@ -42,25 +41,9 @@ from src.core.document_parser import (
 from src.core.embedding_model import embed_documents
 from src.core.faiss_index import (
     build_index,
-    search_similar_chunks,
-    load_index,
+    build_index_from_matrix,
+    load_or_rebuild_index,
     save_index,
-    load_or_rebuild_index,
-    build_index_from_matrix,
-    load_index,
-)
-from src.core.ai_detector import detect_documents_ai_probability
-from src.db import (
-    init_corpus_db,
-    get_all_documents,
-    delete_document,
-    clear_all_data,
-    get_all_embeddings,
-    get_chunk_registry,
-    get_unique_class_sections,
-    build_index_from_matrix,
-    load_index,
-    load_or_rebuild_index,
     search_similar_chunks,
 )
 from src.core.similarity import (
@@ -69,15 +52,12 @@ from src.core.similarity import (
     find_most_similar_chunks,
     flag_plagiarism,
 )
-from src.core.ai_detector import detect_documents_ai_probability
-from src.db import (
-    init_corpus_db,
-    get_all_embeddings,
-    get_chunk_registry,
-    get_unique_class_sections,
 from src.core.text_chunking import chunk_documents
 from src.core.webhook import send_plagiarism_alert
 from src.db import (
+    clear_all_data,
+    delete_document,
+    get_all_documents,
     get_all_embeddings,
     get_chunk_registry,
     get_documents_by_class,
@@ -89,36 +69,19 @@ from src.db.auth import (
     enable_2fa,
     get_2fa_status,
     get_all_users,
+    get_tour_completed,
     get_user_role,
     init_db,
+    set_tour_completed,
     verify_user,
 )
 from src.utils.pdf_report import highlight_pdf_matches
 from src.utils.redis_cache import (
     cache_session_state,
     clear_session,
-    get_faiss_index,
     get_analysis_results,
     get_faiss_index,
     get_session_state,
-)
-from src.visualization.heatmap import (
-    plot_similarity_heatmap,
-)
-from src.core.document_parser import (
-    DEFAULT_OCR_DPI,
-    DEFAULT_OCR_LANGUAGE,
-    SUPPORTED_OCR_LANGUAGES,
-    extract_text,
-    prepare_text_for_embedding,
-)
-from src.db.auth import (
-    init_db,
-    verify_user,
-    get_user_role,
-    get_all_users,
-    get_tour_completed,
-    set_tour_completed,
 )
 from src.utils.warning_list import render_warning_controls
 from src.visualization.heatmap import plot_similarity_heatmap
@@ -324,7 +287,12 @@ def clear_all_dialog():
         if st.button("Cancel", use_container_width=True, key="cancel_clear_all"):
             st.rerun()
     with col2:
-        if st.button("Clear All", type="primary", use_container_width=True, key="confirm_clear_all"):
+        if st.button(
+            "Clear All",
+            type="primary",
+            use_container_width=True,
+            key="confirm_clear_all",
+        ):
             # 1. Clear database tables (documents, chunks, incidents)
             clear_all_data()
 
@@ -338,6 +306,7 @@ def clear_all_dialog():
             # 3. Invalidate Redis cache
             try:
                 from src.utils.redis_cache import get_cache
+
                 cache = get_cache()
                 if cache.is_available():
                     cache.delete("faiss:index:corpus_index")
@@ -483,9 +452,13 @@ with st.sidebar:
                         st.rerun()
 
         st.markdown('<div class="clear-all-container">', unsafe_allow_html=True)
-        if st.button("🗑️ Clear All Documents", key="clear_all_documents_button", use_container_width=True):
+        if st.button(
+            "🗑️ Clear All Documents",
+            key="clear_all_documents_button",
+            use_container_width=True,
+        ):
             clear_all_dialog()
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     else:
         threshold = PLAGIARISM_THRESHOLD
@@ -510,11 +483,14 @@ uploaded_files = st.file_uploader(
     key="file_uploader",
 )
 
-file_bytes_dict = {f.name: f.getvalue() for f in uploaded_files} if uploaded_files else {}
+file_bytes_dict = (
+    {f.name: f.getvalue() for f in uploaded_files} if uploaded_files else {}
+)
 
 if len(file_bytes_dict) < 2:
     st.info("Upload at least 2 files to begin analysis.")
     st.stop()
+
 
 # ── Pipeline Execution ────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
@@ -560,7 +536,11 @@ def run_pipeline(
                 chunk_mat[i, j] = 1.0
             elif j > i:
                 ea, eb = embeddings[na], embeddings[nb]
-                score = float(np.max(cosine_similarity(ea, eb))) if ea.size and eb.size else 0.0
+                score = (
+                    float(np.max(cosine_similarity(ea, eb)))
+                    if ea.size and eb.size
+                    else 0.0
+                )
                 chunk_mat[i, j] = score
                 chunk_mat[j, i] = score
 
@@ -578,6 +558,7 @@ def run_pipeline(
         registry,
         ai_probabilities,
     )
+
 
 with st.spinner("🧠 Processing files and building embeddings…"):
     analysis_results = run_pipeline(
@@ -603,7 +584,9 @@ active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
 flags = flag_plagiarism(active_sim_df, threshold=threshold)
 
 st.subheader("📊 Analysis Summary")
-st.write(f"Processed **{len(raw_texts)}** documents with Chunk Size: `{chunk_size}` and Overlap: `{chunk_overlap}`.")
+st.write(
+    f"Processed **{len(raw_texts)}** documents with Chunk Size: `{chunk_size}` and Overlap: `{chunk_overlap}`."
+)
 
 with st.sidebar:
     selected_class = st.selectbox(
@@ -613,9 +596,9 @@ with st.sidebar:
         key="class_filter_selectbox",
     )
 
-
     st.markdown("---")
-    st.markdown("""
+    st.markdown(
+        """
 **How it works**
 1. Upload **PDF, DOCX, or TXT** assignment files or import from Google Drive
 2. Text is extracted according to the file type
@@ -623,13 +606,10 @@ with st.sidebar:
 4. Chunks are embedded with **all-MiniLM-L6-v2**
 5. A **FAISS index** is built over all chunk vectors
 6. Pairs above the threshold are flagged
-""")
+"""
+    )
     st.markdown("---")
     st.caption("Semantic Plagiarism Detector · FAISS edition")
-
-
-
-
 
     st.markdown("---")
     if st.button("🚪 Log Out", use_container_width=True, key="logout_button"):
@@ -638,7 +618,6 @@ with st.sidebar:
                 del st.session_state[key]
         clear_session(SESSION_ID)
         st.rerun()
-
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -650,41 +629,48 @@ st.markdown(
 st.divider()
 
 
-
 # ── Onboarding Tour for First-Time Admin Users ───────────────────────────────────
-if Tour is not None and user_role == "admin" and not get_tour_completed(st.session_state.username):
+if (
+    Tour is not None
+    and user_role == "admin"
+    and not get_tour_completed(st.session_state.username)
+):
     username = st.session_state.username
-    
+
     if st.button("🎯 Start Guided Tour", key="start_tour_button", type="primary"):
         st.session_state.show_tour = True
-    
+
     if st.session_state.get("show_tour", False):
         tour_steps = [
             Tour.info(
                 title="👋 Welcome to the Plagiarism Detection System!",
-                desc="This guided tour will walk you through the key features to help you get started."
+                desc="This guided tour will walk you through the key features to help you get started.",
             ),
-            Tour.bind("threshold_slider", 
-                      title="⚙️ Plagiarism Threshold",
-                      desc="Adjust similarity threshold. Recommended: 0.59",
-                      side="right"),
-            Tour.bind("class_filter_selectbox",
-                      title="🔍 Class Filter",
-                      desc="Filter analysis results by specific class sections.",
-                      side="right"),
+            Tour.bind(
+                "threshold_slider",
+                title="⚙️ Plagiarism Threshold",
+                desc="Adjust similarity threshold. Recommended: 0.59",
+                side="right",
+            ),
+            Tour.bind(
+                "class_filter_selectbox",
+                title="🔍 Class Filter",
+                desc="Filter analysis results by specific class sections.",
+                side="right",
+            ),
             Tour.info(
                 title="📊 Analysis Dashboard",
-                desc="View similarity metrics, flagged pairs, and comparisons in the tabs below."
+                desc="View similarity metrics, flagged pairs, and comparisons in the tabs below.",
             ),
             Tour.info(
                 title="🎉 You're All Set!",
-                desc="You can now start uploading assignments and detecting plagiarism."
+                desc="You can now start uploading assignments and detecting plagiarism.",
             ),
         ]
-        
+
         tour = Tour(steps=tour_steps)
         tour.start()
-        
+
         set_tour_completed(username, True)
         st.session_state.show_tour = False
         st.success("✅ Onboarding tour completed!")
@@ -765,26 +751,6 @@ if user_role != "admin":
             except Exception as e:
                 st.error(f"Error loading index: {str(e)}")
 else:
-    # ADMINISTRATOR ACCESS: Full Upload & Pipeline UI
-    index_key = "corpus_index"
-    cached_index_data = get_faiss_index(index_key)
-
-# ── Main Header ───────────────────────────────────────────────────────────────
-st.title("🔍 Semantic Plagiarism Detection System")
-st.markdown(
-    "Upload student PDF, DOCX, or TXT files. Detects **semantic similarity** "
-    "using transformer embeddings + **FAISS vector search**."
-)
-st.divider()
-
-if user_role != "admin":
-    # STUDENT PORTAL VIEW
-    st.subheader("🔎 Secure Student Search Portal")
-    query_text = st.text_area("Paste a text snippet to check against index:", height=150)
-    if st.button("🔍 Run Quick Verification", key="user_query") and query_text.strip():
-        # Search logic
-        st.info("Query processed.")
-else:
     # ADMIN FULL ACCESS VIEW
     faiss_index = None
     registry = []
@@ -798,35 +764,21 @@ else:
             index_buffer = _io.BytesIO(cached_index_data)
             faiss_index = faiss.deserialize_index(faiss.read_index(index_buffer))
             registry = get_chunk_registry()
-        except Exception as e:
-            print(f"[Redis] Error loading cached index: {e}, falling back to disk")
-
-    # If Redis loading failed, load from local disk
-    if faiss_index is None:
-        if os.path.exists(_INDEX_PATH):
-            try:
-                faiss_index = load_index(_INDEX_PATH)
-                registry = get_chunk_registry()
-            except Exception:
-                faiss_index = None
-                registry = []
-
-    # Initialize analysis_results in session state
-    if "analysis_results" not in st.session_state:
-        st.session_state.analysis_results = None
-            st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
             st.info(
                 f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors"
             )
         except Exception as e:
             print(f"[Redis] Error loading cached index: {e}, falling back to disk")
+
+    # If Redis loading failed, load from local disk
+    if faiss_index is None:
+        try:
             from src.core.faiss_index import load_or_rebuild_index
 
             faiss_index, registry, index_recovered = load_or_rebuild_index(_INDEX_PATH)
 
             if index_recovered:
                 if faiss_index.ntotal:
-                    st.warning(f"FAISS index was missing, corrupted, or inconsistent and was automatically rebuilt from {faiss_index.ntotal} stored vectors.")
                     st.warning(
                         f"FAISS index was missing, corrupted, or inconsistent and was "
                         f"automatically rebuilt from {faiss_index.ntotal} stored vectors."
@@ -837,19 +789,11 @@ else:
                         "initialized safely."
                     )
             else:
-                st.info(f"Loaded and validated the existing FAISS index with {faiss_index.ntotal} vectors.")
-    else:
-        faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
-        registry = get_chunk_registry()
                 st.info(
                     f"Loaded and validated the existing FAISS index with "
                     f"{faiss_index.ntotal} vectors."
                 )
-    else:
-        if os.path.exists(_INDEX_PATH):
-            faiss_index = load_index(_INDEX_PATH)
-            registry = get_chunk_registry()
-        else:
+        except Exception:
             faiss_index = None
             registry = []
 
@@ -865,19 +809,6 @@ else:
     if "analysis_file_signature" not in st.session_state:
         st.session_state.analysis_file_signature = None
 
-        cached_signature = get_session_state(SESSION_ID, "analysis_file_signature")
-        if cached_signature is not None:
-            st.session_state.analysis_file_signature = cached_signature
-
-            faiss_index = (
-                load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
-            )
-            registry = get_chunk_registry()
-    else:
-        faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
-        registry = get_chunk_registry()
-
-        # Try to load from Redis cache
         cached_signature = get_session_state(SESSION_ID, "analysis_file_signature")
         if cached_signature is not None:
             st.session_state.analysis_file_signature = cached_signature
@@ -949,15 +880,20 @@ else:
             if f.name.lower().endswith(".zip"):
                 try:
                     from src.utils.zip_processor import process_zip_file
+
                     zip_files = process_zip_file(f.read())
                     if not zip_files:
-                        st.error(f"⚠️ ZIP file '{f.name}' contains no supported documents (.pdf, .docx, .txt).")
+                        st.error(
+                            f"⚠️ ZIP file '{f.name}' contains no supported documents (.pdf, .docx, .txt)."
+                        )
                     else:
                         file_bytes_dict.update(zip_files)
                 except ValueError as ve:
                     st.error(f"⚠️ Failed to process ZIP archive '{f.name}': {str(ve)}")
                 except Exception:
-                    st.error(f"⚠️ Failed to process ZIP archive '{f.name}': Unknown error occurred.")
+                    st.error(
+                        f"⚠️ Failed to process ZIP archive '{f.name}': Unknown error occurred."
+                    )
             else:
                 file_bytes_dict[f.name] = f.read()
             f.seek(0)
@@ -1121,7 +1057,6 @@ else:
             _io.BytesIO(data), name, ocr_language=ocr_language, ocr_dpi=ocr_dpi
         )
 
-
     for flag in flags:
         try:
             send_plagiarism_alert(
@@ -1164,10 +1099,9 @@ else:
 
     with tab_warnings:
         st.subheader("⚠️ Plagiarism Warnings")
-        render_warning_controls(flags, threshold=threshold, ai_probabilities=ai_probabilities)
-
-
-
+        render_warning_controls(
+            flags, threshold=threshold, ai_probabilities=ai_probabilities
+        )
 
         render_warning_controls(
             flags, threshold=threshold, ai_probabilities=ai_probabilities
@@ -1243,7 +1177,9 @@ else:
                 )
 
             with col_json:
-                json_data = export_similarity_matrix_to_json(active_sim_df).encode("utf-8")
+                json_data = export_similarity_matrix_to_json(active_sim_df).encode(
+                    "utf-8"
+                )
                 st.download_button(
                     "⬇️ Download JSON",
                     json_data,
