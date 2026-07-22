@@ -43,6 +43,7 @@ from src.core.embedding_model import embed_documents
 from src.core.faiss_index import (
     build_index,
     search_similar_chunks,
+    load_index,
     save_index,
     load_or_rebuild_index,
     build_index_from_matrix,
@@ -68,6 +69,12 @@ from src.core.similarity import (
     find_most_similar_chunks,
     flag_plagiarism,
 )
+from src.core.ai_detector import detect_documents_ai_probability
+from src.db import (
+    init_corpus_db,
+    get_all_embeddings,
+    get_chunk_registry,
+    get_unique_class_sections,
 from src.core.text_chunking import chunk_documents
 from src.core.webhook import send_plagiarism_alert
 from src.db import (
@@ -110,8 +117,10 @@ from src.visualization.heatmap import plot_similarity_heatmap
 
 try:
     from src.utils.excel_export import export_similarity_matrix_to_excel
+    from src.utils.json_export import export_similarity_matrix_to_json
 except ImportError:
     from utils.excel_export import export_similarity_matrix_to_excel
+    from utils.json_export import export_similarity_matrix_to_json
 
 # Initialize corpus database
 init_corpus_db()
@@ -562,6 +571,15 @@ with st.sidebar:
         clear_session(SESSION_ID)
         st.rerun()
 
+# ── Header ────────────────────────────────────────────────────────────────────
+st.title("🔍 Semantic Plagiarism Detection System")
+st.markdown(
+    "Upload student PDF, DOCX, or TXT files. Detects **semantic similarity** "
+    "(even paraphrased text) using transformer embeddings + **FAISS vector search**."
+)
+st.divider()
+
+
 
 # ── Onboarding Tour for First-Time Admin Users ───────────────────────────────────
 if Tour is not None and user_role == "admin" and not get_tour_completed(st.session_state.username):
@@ -681,6 +699,28 @@ else:
     index_key = "corpus_index"
     cached_index_data = get_faiss_index(index_key)
 
+# ── Main Header ───────────────────────────────────────────────────────────────
+st.title("🔍 Semantic Plagiarism Detection System")
+st.markdown(
+    "Upload student PDF, DOCX, or TXT files. Detects **semantic similarity** "
+    "using transformer embeddings + **FAISS vector search**."
+)
+st.divider()
+
+if user_role != "admin":
+    # STUDENT PORTAL VIEW
+    st.subheader("🔎 Secure Student Search Portal")
+    query_text = st.text_area("Paste a text snippet to check against index:", height=150)
+    if st.button("🔍 Run Quick Verification", key="user_query") and query_text.strip():
+        # Search logic
+        st.info("Query processed.")
+else:
+    # ADMIN FULL ACCESS VIEW
+    faiss_index = None
+    registry = []
+
+    # Try to load FAISS index from Redis cache
+    cached_index_data = get_faiss_index("corpus_index")
     if cached_index_data is not None:
         try:
             import faiss
@@ -688,6 +728,22 @@ else:
             index_buffer = _io.BytesIO(cached_index_data)
             faiss_index = faiss.deserialize_index(faiss.read_index(index_buffer))
             registry = get_chunk_registry()
+        except Exception as e:
+            print(f"[Redis] Error loading cached index: {e}, falling back to disk")
+
+    # If Redis loading failed, load from local disk
+    if faiss_index is None:
+        if os.path.exists(_INDEX_PATH):
+            try:
+                faiss_index = load_index(_INDEX_PATH)
+                registry = get_chunk_registry()
+            except Exception:
+                faiss_index = None
+                registry = []
+
+    # Initialize analysis_results in session state
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
             st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
             st.info(
                 f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors"
@@ -735,6 +791,7 @@ else:
         if cached_results is not None:
             st.session_state.analysis_results = cached_results
 
+    # Initialize analysis_file_signature in session state
     if "analysis_file_signature" not in st.session_state:
         st.session_state.analysis_file_signature = None
 
@@ -981,14 +1038,6 @@ else:
             _io.BytesIO(data), name, ocr_language=ocr_language, ocr_dpi=ocr_dpi
         )
 
-    chunked_docs = chunk_documents(raw_texts)
-    embeddings = embed_documents(chunked_docs)
-    sim_df = document_similarity_matrix(embeddings)
-    faiss_index, registry = build_index(embeddings, chunked_docs)
-    ai_probabilities = detect_documents_ai_probability(chunked_docs)
-
-    active_sim_df = sim_df
-    flags = flag_plagiarism(active_sim_df, threshold=threshold)
 
     for flag in flags:
         try:
@@ -1032,6 +1081,11 @@ else:
 
     with tab_warnings:
         st.subheader("⚠️ Plagiarism Warnings")
+        render_warning_controls(flags, threshold=threshold, ai_probabilities=ai_probabilities)
+
+
+
+
         render_warning_controls(
             flags, threshold=threshold, ai_probabilities=ai_probabilities
         )
@@ -1094,7 +1148,7 @@ else:
             st.dataframe(styled_df, use_container_width=True)
 
             # Export options row
-            col_csv, col_excel = st.columns(2)
+            col_csv, col_json, col_excel = st.columns(3)
 
             with col_csv:
                 st.download_button(
@@ -1103,6 +1157,17 @@ else:
                     "similarity_matrix.csv",
                     "text/csv",
                     use_container_width=True,
+                )
+
+            with col_json:
+                json_data = export_similarity_matrix_to_json(active_sim_df).encode("utf-8")
+                st.download_button(
+                    "⬇️ Download JSON",
+                    json_data,
+                    "similarity_matrix.json",
+                    "application/json",
+                    use_container_width=True,
+                    key="json_export_button",
                 )
 
             with col_excel:
