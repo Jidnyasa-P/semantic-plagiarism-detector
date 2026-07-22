@@ -41,11 +41,9 @@ def _make_docx_bytes(text: str) -> bytes:
     return buf.getvalue()
 
 
-@pytest.mark.skipif(
-    not TESSERACT_AVAILABLE, reason="Tesseract OCR is not installed on this machine"
-)
-def test_extract_from_pdf_bytes():
-    pdf_bytes = _make_pdf_bytes("Hello PDF")
+@patch("src.core.document_parser._ocr_pdf_page", return_value="")
+def test_extract_from_pdf_bytes(mock_ocr):
+    pdf_bytes = _make_pdf_bytes("Hello PDF this is a document with enough words to satisfy native text check")
     # For blank page PDF, pdfplumber might return empty string, but it shouldn't error
     result = extract_text_from_pdf(pdf_bytes)
     assert isinstance(result, str)
@@ -99,11 +97,9 @@ def test_extract_from_txt_bytes():
     assert result == "Hello TXT"
 
 
-@pytest.mark.skipif(
-    not TESSERACT_AVAILABLE, reason="Tesseract OCR is not installed on this machine"
-)
-def test_extract_text_routing():
-    pdf_bytes = _make_pdf_bytes("Hello PDF")
+@patch("src.core.document_parser._ocr_pdf_page", return_value="")
+def test_extract_text_routing(mock_ocr):
+    pdf_bytes = _make_pdf_bytes("Hello PDF this is a document with enough words to satisfy native text check")
     docx_bytes = _make_docx_bytes("Hello DOCX")
     txt_bytes = b"Hello TXT"
 

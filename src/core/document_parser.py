@@ -271,9 +271,9 @@ def _ocr_pdf_page(
         import pytesseract
         from PIL import Image
     except ImportError as exc:
+        from src.errors import OCR_DEPENDENCIES_MISSING
         raise OCRDependencyError(
-            "OCR dependencies are missing. Install pytesseract, PyMuPDF and "
-            "Pillow using: python -m pip install pytesseract pymupdf pillow"
+            OCR_DEPENDENCIES_MISSING
         ) from exc
 
     _configure_tesseract(pytesseract)
@@ -297,9 +297,9 @@ def _ocr_pdf_page(
                 config="--oem 3 --psm 3",
             ).strip()
     except pytesseract.TesseractNotFoundError as exc:
+        from src.errors import OCR_TESSERACT_NOT_FOUND
         raise OCRDependencyError(
-            "Tesseract OCR was not found. Install Tesseract and either add it "
-            "to PATH or set TESSERACT_CMD to tesseract.exe."
+            OCR_TESSERACT_NOT_FOUND
         ) from exc
 
 

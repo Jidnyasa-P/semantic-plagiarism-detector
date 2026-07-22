@@ -28,18 +28,19 @@ from src.core.config import (
 
 def _validated_batch_size(batch_size: Optional[int]) -> Optional[int]:
     """Return a safe integer batch size or None for unbatched execution."""
+    from src.errors import SIM_BATCH_SIZE_INVALID
     if batch_size is None:
         return None
     if isinstance(batch_size, bool):
-        raise ValueError("batch_size must be an integer")
+        raise ValueError(SIM_BATCH_SIZE_INVALID)
     if isinstance(batch_size, (float, np.floating)):
         if not float(batch_size).is_integer():
-            raise ValueError("batch_size must be an integer")
+            raise ValueError(SIM_BATCH_SIZE_INVALID)
         batch_size = int(batch_size)
     try:
         size = int(batch_size)
     except (TypeError, ValueError) as exc:
-        raise ValueError("batch_size must be an integer") from exc
+        raise ValueError(SIM_BATCH_SIZE_INVALID) from exc
     return size if size > 0 else None
 
 
@@ -117,17 +118,16 @@ def hybrid_similarity_matrix(
         hybrid_score = w * semantic + (1 - w) * lexical
     """
     if not (0.0 <= w <= 1.0):
-        raise ValueError(f"Weight w must be between 0.0 and 1.0, got {w}")
+        from src.errors import SIM_WEIGHT_OUT_OF_RANGE
+        raise ValueError(SIM_WEIGHT_OUT_OF_RANGE.format(w=w))
 
     # Ensure both DataFrames have the same shape and index/columns
     if semantic_df.shape != lexical_df.shape:
-        raise ValueError("Semantic and lexical matrices must have the same shape")
-    if not semantic_df.index.equals(lexical_df.index) or not semantic_df.columns.equals(
-        lexical_df.columns
-    ):
-        raise ValueError(
-            "Semantic and lexical matrices must have the same index and columns"
-        )
+        from src.errors import SIM_SHAPE_MISMATCH
+        raise ValueError(SIM_SHAPE_MISMATCH)
+    if not semantic_df.index.equals(lexical_df.index) or not semantic_df.columns.equals(lexical_df.columns):
+        from src.errors import SIM_INDEX_MISMATCH
+        raise ValueError(SIM_INDEX_MISMATCH)
 
     hybrid_df = w * semantic_df + (1 - w) * lexical_df
     return hybrid_df

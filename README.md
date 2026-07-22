@@ -139,6 +139,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 
 ```bash
 pip install -r requirements.txt
+pip install pytest-cov  # Required for coverage reporting
 ```
 
 > **Note:** The first run will download the `paraphrase-multilingual-MiniLM-L12-v2` model (~420 MB).

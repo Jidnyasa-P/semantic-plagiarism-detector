@@ -54,11 +54,20 @@ git checkout -b feature/your-feature-name
 
 ```bash
 pip install -r requirements.txt
+pip install pytest-cov
 ```
 
 ## 5. Run the project
 
 Ensure the project builds and runs correctly before making any changes.
+
+### Running Tests and Coverage
+
+To run tests with coverage reporting:
+```bash
+pytest --cov=src --cov-report=term-missing
+```
+The test suite enforces an 80% minimum coverage threshold.
 
 ---
 

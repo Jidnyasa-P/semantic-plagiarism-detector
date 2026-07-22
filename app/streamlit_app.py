@@ -32,6 +32,11 @@ from app.theme import (
 )
 from src.core.ai_detector import detect_documents_ai_probability
 from src.core.config import DEFAULT_THRESHOLDS, severity_key
+from src.visualization.heatmap import plot_similarity_heatmap, plot_chunk_similarity_comparison
+from src.core.faiss_index import build_index, find_plagiarised_chunks, search_similar_chunks, save_index, load_index, build_index_from_matrix, ChunkRecord
+from src.visualization.network_graph import plot_similarity_network
+from src.core.webhook import send_plagiarism_alert
+from src.db import init_corpus_db, get_all_documents, delete_document, get_all_embeddings, get_chunk_registry, add_document, get_document_by_hash, add_chunks
 from src.core.document_parser import (
     DEFAULT_OCR_DPI,
     DEFAULT_OCR_LANGUAGE,
@@ -163,9 +168,8 @@ if last_interaction and st.session_state.get("authenticated", False):
             if key in st.session_state:
                 del st.session_state[key]
         clear_session(SESSION_ID)
-        st.warning(
-            "⏱️ Your session has expired due to 15 minutes of inactivity. Please log in again."
-        )
+        from src.errors import UI_SESSION_EXPIRED
+        st.warning(UI_SESSION_EXPIRED)
         st.stop()
     else:
         st.session_state.last_interaction = time.time()
@@ -239,10 +243,14 @@ if not st.session_state.get("authenticated", False):
             username = username.strip().lower()
 
             if not username or not password:
-                st.error("Please enter both username and password.")
+                from src.errors import AUTH_BLANK_CREDENTIALS
+                st.error(AUTH_BLANK_CREDENTIALS)
             elif verify_user(username, password):
                 role = get_user_role(username)
-                if role is not None:
+                if role is None:
+                    from src.errors import AUTH_ROLE_UNDETERMINED
+                    st.error(AUTH_ROLE_UNDETERMINED)
+                else:
                     # Check if 2FA is enabled for this user
                     enabled, _ = get_2fa_status(username)
                     if enabled:
@@ -255,7 +263,6 @@ if not st.session_state.get("authenticated", False):
                         st.session_state.username = username
                         st.session_state.role = role
                         st.session_state.last_interaction = time.time()
-
                         cache_session_state(SESSION_ID, "authenticated", True)
                         cache_session_state(SESSION_ID, "username", username)
                         cache_session_state(SESSION_ID, "role", role)
@@ -264,7 +271,8 @@ if not st.session_state.get("authenticated", False):
                         st.success(f"Welcome back, {username}!")
                         st.rerun()
             else:
-                st.error("Invalid username or password.")
+                from src.errors import AUTH_INVALID_CREDENTIALS
+                st.error(AUTH_INVALID_CREDENTIALS)
     st.stop()
 
 
@@ -464,6 +472,107 @@ with st.sidebar:
             clear_all_dialog()
         st.markdown("</div>", unsafe_allow_html=True)
 
+# ── MAIN APPLICATION SECTIONS (ROLE CHECKED) ──────────────────────────────────
+
+if user_role != "admin":
+    # STANDARD USER VIEW: Student Query / Search Panel Only (No admin PDF uploading)
+    st.subheader("🔎 Secure Student Search Portal")
+    st.caption("Paste a text snippet below to check its similarity against existing indexed assignments.")
+    
+    st.info("🔒 Note: Direct assignment uploads and detailed breakdown panels are restricted to Administrator access. Your queries are anonymized for privacy.")
+    
+    query_text = st.text_area("Paste a text snippet to check against index:", height=150,
+                              placeholder="Paste a paragraph here to check for plagiarism...")
+    
+    if st.button("🔍 Run Quick Verification", key="user_query") and query_text.strip():
+        # Load existing index and registry from database
+        from src.db.corpus_db import get_chunk_registry, get_all_embeddings
+        from src.core.faiss_index import build_index_from_matrix
+        
+        with st.spinner("Loading index and searching..."):
+            try:
+                registry = get_chunk_registry()
+                embeddings_matrix = get_all_embeddings()
+                
+                if embeddings_matrix.shape[0] == 0:
+                    from src.errors import UI_NO_DOCUMENTS_INDEXED
+                    st.warning(UI_NO_DOCUMENTS_INDEXED)
+                else:
+                    # Build index from stored embeddings
+                    faiss_index = build_index_from_matrix(embeddings_matrix, index_type="auto")
+                    
+                    # Embed the query
+                    from src.core.embedding_model import embed_chunks
+                    query_vec = embed_chunks([query_text.strip()])[0]
+                    
+                    # Search with threshold
+                    faiss_threshold = threshold
+                    results = search_similar_chunks(query_vec, faiss_index, registry,
+                                                      top_k=faiss_top_k, threshold=faiss_threshold)
+                    
+                    if not results:
+                        st.success("✅ No significant matches found in the assignment database.")
+                    else:
+                        st.success(f"Found **{len(results)}** potentially similar passages.")
+                        
+                        # Anonymize document names
+                        doc_id_map = {}
+                        anon_counter = 1
+                        
+                        for record, score in results:
+                            if record.doc_name not in doc_id_map:
+                                doc_id_map[record.doc_name] = f"Document-{anon_counter:03d}"
+                                anon_counter += 1
+                        
+                        # Display anonymized results
+                        for rank, (record, score) in enumerate(results, 1):
+                            anon_doc_name = doc_id_map[record.doc_name]
+                            color = "#ff4b4b" if score >= 0.90 else "#ffa500"
+                            
+                            with st.expander(
+                                f"#{rank} · {anon_doc_name} (chunk #{record.chunk_index+1}) "
+                                f"— {score:.1%}",
+                                expanded=(rank == 1)
+                            ):
+                                cq, cm = st.columns(2)
+                                with cq:
+                                    st.markdown("**Your query:**")
+                                    st.info(query_text.strip())
+                                with cm:
+                                    st.markdown(f"**Matching passage in {anon_doc_name}:**")
+                                    st.warning(record.chunk_text)
+                                
+                                st.markdown(
+                                    f"<div style='text-align:right;'>"
+                                    f"<span style='background:{color};color:white;padding:3px 12px;"
+                                    f"border-radius:10px;font-size:0.85rem;font-weight:700;'>"
+                                    f"Similarity: {score*100:.1f}%</span></div>",
+                                    unsafe_allow_html=True,
+                                )
+                        
+                        st.caption("🔒 Document names are anonymized to protect student privacy.")
+                        
+            except Exception as e:
+                from src.errors import UI_INDEX_LOAD_FAILED
+                st.error(UI_INDEX_LOAD_FAILED.format(error=str(e)))
+                st.info("Please ensure documents have been indexed by an administrator.")
+else:
+    # ADMINISTRATOR ACCESS: Full Upload Pipeline & Evaluation Dashboards
+    
+    # Load or initialize FAISS index
+    if os.path.exists(_INDEX_PATH):
+        faiss_index = load_index(_INDEX_PATH)
+        registry = get_chunk_registry()
+        if faiss_index is not None and faiss_index.ntotal != len(registry):
+            all_embs = get_all_embeddings()
+            if len(all_embs) > 0 and len(all_embs) == len(registry):
+                faiss_index = build_index_from_matrix(all_embs)
+                save_index(faiss_index, _INDEX_PATH)
+            elif len(all_embs) == 0:
+                faiss_index = None
+                registry = []
+        if faiss_index is not None:
+            st.info(f"📂 Loaded existing FAISS index with {faiss_index.ntotal} vectors")
     else:
         threshold = DEFAULT_THRESHOLDS.plagiarism
         use_chunk_matrix = False
@@ -563,6 +672,121 @@ def run_pipeline(
         ai_probabilities,
     )
 
+    # Filter out already-uploaded files and process only new ones
+    new_files = {}
+    skipped_files = []
+    for f in uploaded_files:
+        file_hash = hashlib.sha256(f.read()).hexdigest()
+        f.seek(0)  # Reset file pointer
+        existing = get_document_by_hash(file_hash)
+        if existing:
+            skipped_files.append(f.name)
+        else:
+            new_files[f.name] = f.read()
+            add_document(f.name, file_hash)
+    
+    if skipped_files:
+        st.info(f"⏭️ Skipped {len(skipped_files)} already-uploaded files: {', '.join(skipped_files)}")
+    
+    if not new_files:
+        from src.errors import UI_NO_NEW_FILES
+        st.warning(UI_NO_NEW_FILES)
+        if faiss_index is None:
+            st.stop()
+        # Continue with existing index for analysis
+    else:
+        st.info(f"📤 Processing {len(new_files)} new files...")
+        
+        # Process new files
+        with st.spinner("🧠 Processing new PDFs, building embeddings and FAISS index…"):
+            raw_texts_new, chunked_docs_new, embeddings_new, sim_df_new, chunk_sim_df_new, faiss_index_new, registry_new = \
+                run_pipeline(new_files)
+        
+        # If we have an existing index, merge the new data
+        if faiss_index is not None:
+            # Add new embeddings to existing index
+            all_vectors = []
+            all_registry = registry.copy()
+            
+            for doc_name, emb in embeddings_new.items():
+                chunks = chunked_docs_new.get(doc_name, [])
+                if emb.ndim != 2 or emb.shape[0] == 0:
+                    continue
+                for i, (vec, text) in enumerate(zip(emb, chunks)):
+                    all_vectors.append(vec.astype("float32"))
+                    all_registry.append(ChunkRecord(doc_name, i, text))
+            
+            if all_vectors:
+                matrix = np.vstack(all_vectors)
+                faiss_index.add(matrix)  # type: ignore[arg-type]
+                registry = all_registry
+                st.success(f"✅ Added {len(all_vectors)} new vectors to existing index")
+            
+            raw_texts = raw_texts_new
+            chunked_docs = chunked_docs_new
+            embeddings = embeddings_new
+            sim_df = sim_df_new
+            chunk_sim_df = chunk_sim_df_new
+        else:
+            # No existing index, use the new one
+            faiss_index = faiss_index_new
+            registry = registry_new
+            raw_texts = raw_texts_new
+            chunked_docs = chunked_docs_new
+            embeddings = embeddings_new
+            sim_df = sim_df_new
+            chunk_sim_df = chunk_sim_df_new
+        
+        # Save the updated FAISS index to disk
+        save_index(faiss_index, _INDEX_PATH)
+        
+        # Store chunks in database for persistence
+        for doc_name, emb in embeddings_new.items():
+            chunks = chunked_docs_new.get(doc_name, [])
+            if emb.ndim != 2 or emb.shape[0] == 0:
+                continue
+            # Get the starting vector_id for this document
+            start_id = len(get_chunk_registry())
+            chunks_to_add = []
+            for i, (vec, text) in enumerate(zip(emb, chunks)):
+                chunks_to_add.append((start_id + i, doc_name, i, text, vec))
+            add_chunks(chunks_to_add)
+    
+    # If we have an existing index but no new files, load existing data from database
+    if faiss_index is not None and not new_files:
+        all_embs = get_all_embeddings()
+        chunked_docs = {}
+        embeddings = {}
+        for i, rec in enumerate(registry):
+            doc_name = rec.doc_name
+            if doc_name not in chunked_docs:
+                chunked_docs[doc_name] = []
+                embeddings[doc_name] = []
+            chunked_docs[doc_name].append(rec.chunk_text)
+            if i < len(all_embs):
+                embeddings[doc_name].append(all_embs[i])
+
+        for d in embeddings:
+            embeddings[d] = np.array(embeddings[d], dtype=np.float32)
+
+        raw_texts = {d: "\n\n".join(chunks) for d, chunks in chunked_docs.items()}
+
+        if len(embeddings) >= 2:
+            sim_df = document_similarity_matrix(embeddings)
+            chunk_sim_df = None
+            active_sim_df = sim_df
+            flags = flag_plagiarism(active_sim_df, threshold=threshold)
+        else:
+            sim_df = None
+            chunk_sim_df = None
+            active_sim_df = None
+            flags = []
+    else:
+        # Check for empty PDFs (e.g. scanned images with no OCR)
+        empty_docs = [name for name, text in raw_texts.items() if not text.strip()]
+        if empty_docs:
+            from src.errors import UI_COULD_NOT_EXTRACT_TEXT
+            st.warning(UI_COULD_NOT_EXTRACT_TEXT.format(docs=', '.join(empty_docs)))
 
 with st.spinner("🧠 Processing files and building embeddings…"):
     analysis_results = run_pipeline(
@@ -1149,16 +1373,9 @@ else:
     # ══ TAB 3: MATRIX ═════════════════════════════════════════════════════════
     with tab_matrix:
         st.subheader("📋 Similarity Matrix")
-
         if active_sim_df is None:
-            st.markdown(
-                empty_state_html(
-                    "No Similarity Matrix",
-                    "Ensure at least 2 documents are uploaded to compute similarities.",
-                    "📋",
-                ),
-                unsafe_allow_html=True,
-            )
+            from src.errors import UI_SIMILARITY_MATRIX_REUPLOAD
+            st.info(UI_SIMILARITY_MATRIX_REUPLOAD)
         else:
 
             def _highlight(val: Any) -> str:
@@ -1218,24 +1435,80 @@ else:
     # ══ TAB 4: HEATMAP ════════════════════════════════════════════════════════
     with tab_heatmap:
         st.subheader("🗺️ Similarity Heatmap")
-        heatmap_fig = plot_similarity_heatmap(
-            active_sim_df,
-            title="Document Semantic Similarity",
-            threshold=threshold,
-            theme_colors=get_colors(),
-        )
-        st.pyplot(heatmap_fig, use_container_width=True)
+        if active_sim_df is None:
+            from src.errors import UI_SIMILARITY_MATRIX_REUPLOAD
+            st.info(UI_SIMILARITY_MATRIX_REUPLOAD)
+        else:
+            heatmap_fig = plot_similarity_heatmap(
+                active_sim_df,
+                title="Document Semantic Similarity",
+                threshold=threshold,
+                theme_colors=get_colors(),
+            )
 
-    # ══ TAB 5: PAIR DRILL-DOWN (#145 Feature Included) ════════════════════════
+            st.pyplot(
+                heatmap_fig,
+                use_container_width=True,
+            )
+
+            buf = _io.BytesIO()
+            heatmap_fig.savefig(
+                buf,
+                format="png",
+                dpi=150,
+                bbox_inches="tight",
+            )
+
+            buf.seek(0)
+
+            st.download_button(
+                "⬇️ Download Heatmap PNG",
+                buf,
+                "heatmap.png",
+                "image/png",
+            )
+
+            st.divider()
+
+            st.subheader("🕸️ Interactive Plagiarism Network")
+            st.caption(
+                "Documents are shown as nodes. Connections appear when "
+                "their similarity is greater than or equal to the selected threshold."
+            )
+
+            network_fig = plot_similarity_network(
+                similarity_df=active_sim_df,
+                threshold=threshold,
+                title="Interactive Document Plagiarism Network",
+            )
+
+            st.plotly_chart(
+                network_fig,
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "scrollZoom": True,
+                },
+            )
+
+    # ══ TAB 5: PAIR DRILL-DOWN ══════════════════════════════════════════════════
     with tab_drill:
         st.subheader("🔬 Pair Drill-Down")
-        c1, c2 = st.columns(2)
-        with c1:
-            doc_a = st.selectbox("Document A", doc_names, index=0, key="da")
-        with c2:
-            doc_b = st.selectbox(
-                "Document B", [d for d in doc_names if d != doc_a], index=0, key="db"
-            )
+        st.caption("Inspect chunk-level similarity between any two documents.")
+        if active_sim_df is None:
+            from src.errors import UI_SIMILARITY_MATRIX_REUPLOAD
+            st.info(UI_SIMILARITY_MATRIX_REUPLOAD)
+        elif len(active_sim_df) < 2:
+            from src.errors import UI_NEED_MIN_DOCUMENTS
+            st.warning(UI_NEED_MIN_DOCUMENTS)
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                doc_a = st.selectbox("Document A", doc_names, index=0, key="da")
+            with c2:
+                doc_b = st.selectbox(
+                    "Document B", [d for d in doc_names if d != doc_a], index=0, key="db"
+                )
 
         score = float(active_sim_df.loc[doc_a, doc_b])
         st.markdown(f"**Overall Similarity:** `{score:.1%}`")
