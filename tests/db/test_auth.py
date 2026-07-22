@@ -1,28 +1,32 @@
-from src.db.auth import (
-    init_db,
-    add_user,
-    verify_user,
-    get_user_role,
-    delete_user,
-    update_password,
-)
-import pytest
 import sqlite3
 import uuid
+
+import pytest
+
+from src.db.auth import (
+    add_user,
+    delete_user,
+    get_user_role,
+    init_db,
+    update_password,
+    verify_user,
+)
 
 
 @pytest.fixture(autouse=True)
 def db_connection():
     conn = sqlite3.connect(":memory:")
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
                 CREATE TABLE IF NOT EXISTS users (
                     id       INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT    UNIQUE NOT NULL,
                     password TEXT    NOT NULL,
                     role     TEXT    NOT NULL DEFAULT 'teacher'
                 )
-            """)
+            """
+    )
     conn.commit()
     yield conn
     print("In-memory database ready for testing")

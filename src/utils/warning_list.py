@@ -11,7 +11,6 @@ import streamlit as st
 
 from app.theme import badge_html, tier_from_severity_label
 
-
 SORT_FIELDS = {
     "Similarity": "similarity",
     "Document A": "doc_a",
@@ -274,11 +273,11 @@ def render_warning_controls(
                     min(1.0, max(0.0, float(flag["similarity"]))),
                     text=f"Similarity: {flag['similarity'] * 100:.1f}%",
                 )
-                
+
                 # Display AI probabilities if available
                 if ai_probabilities:
-                    ai_a = ai_probabilities.get(flag['doc_a'], {}).get('overall', 0.0)
-                    ai_b = ai_probabilities.get(flag['doc_b'], {}).get('overall', 0.0)
+                    ai_a = ai_probabilities.get(flag["doc_a"], {}).get("overall", 0.0)
+                    ai_b = ai_probabilities.get(flag["doc_b"], {}).get("overall", 0.0)
                     if ai_a > 0 or ai_b > 0:
                         st.caption(
                             f"🤖 AI Prob: {flag['doc_a']}: {ai_a:.1%} | "

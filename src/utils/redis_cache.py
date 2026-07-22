@@ -5,10 +5,11 @@ Redis connection and caching utilities for session state and FAISS results.
 Supports scaling across multiple server nodes in Docker/Kubernetes environments.
 """
 
+import json
 import os
 import pickle
-import json
 from typing import Any, Optional
+
 try:
     import redis
 except ImportError:
@@ -35,19 +36,19 @@ ANALYSIS_RESULTS_TTL = 2 * 60 * 60  # 2 hours for analysis results
 
 class RedisCache:
     """Redis cache manager for session state and computational results."""
-    
-    _instance: Optional['RedisCache'] = None
+
+    _instance: Optional["RedisCache"] = None
     _client: Optional[Any] = None
-    
-    def __new__(cls) -> 'RedisCache':
+
+    def __new__(cls) -> "RedisCache":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         if self._client is None:
             self._connect()
-    
+
     def _connect(self) -> None:
         """Establish Redis connection with fallback to in-memory if unavailable."""
         if redis is None:
@@ -60,7 +61,7 @@ class RedisCache:
                     REDIS_URL,
                     password=REDIS_PASSWORD,
                     decode_responses=False,
-                    socket_connect_timeout=5
+                    socket_connect_timeout=5,
                 )
             else:
                 self._client = redis.Redis(
@@ -69,7 +70,7 @@ class RedisCache:
                     db=REDIS_DB,
                     password=REDIS_PASSWORD,
                     decode_responses=False,
-                    socket_connect_timeout=5
+                    socket_connect_timeout=5,
                 )
             # Test connection
             self._client.ping()
@@ -77,7 +78,7 @@ class RedisCache:
         except (AttributeError, redis.ConnectionError, redis.TimeoutError) as e:
             print(f"[RedisCache] Redis connection failed: {e}. Running without cache.")
             self._client = None
-    
+
     def is_available(self) -> bool:
         """Check if Redis is available."""
         if self._client is None:
@@ -87,12 +88,12 @@ class RedisCache:
             return True
         except Exception:
             return False
-    
+
     def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """Store a value in Redis with optional TTL."""
         if not self.is_available():
             return False
-        
+
         try:
             serialized = pickle.dumps(value)
             if ttl:
@@ -103,12 +104,12 @@ class RedisCache:
         except (RedisError, pickle.PickleError) as e:
             print(f"[RedisCache] Error setting key {key}: {e}")
             return False
-    
+
     def get(self, key: str) -> Optional[Any]:
         """Retrieve a value from Redis."""
         if not self.is_available():
             return None
-        
+
         try:
             data = self._client.get(key)
             if data is None:
@@ -117,24 +118,24 @@ class RedisCache:
         except (RedisError, pickle.PickleError) as e:
             print(f"[RedisCache] Error getting key {key}: {e}")
             return None
-    
+
     def delete(self, key: str) -> bool:
         """Delete a key from Redis."""
         if not self.is_available():
             return False
-        
+
         try:
             self._client.delete(key)
             return True
         except RedisError as e:
             print(f"[RedisCache] Error deleting key {key}: {e}")
             return False
-    
+
     def set_json(self, key: str, value: dict, ttl: Optional[int] = None) -> bool:
         """Store a JSON-serializable dict in Redis."""
         if not self.is_available():
             return False
-        
+
         try:
             serialized = json.dumps(value)
             if ttl:
@@ -145,12 +146,12 @@ class RedisCache:
         except (RedisError, json.JSONDecodeError) as e:
             print(f"[RedisCache] Error setting JSON key {key}: {e}")
             return False
-    
+
     def get_json(self, key: str) -> Optional[dict]:
         """Retrieve a JSON value from Redis."""
         if not self.is_available():
             return None
-        
+
         try:
             data = self._client.get(key)
             if data is None:
@@ -159,23 +160,23 @@ class RedisCache:
         except (RedisError, json.JSONDecodeError) as e:
             print(f"[RedisCache] Error getting JSON key {key}: {e}")
             return None
-    
+
     def exists(self, key: str) -> bool:
         """Check if a key exists in Redis."""
         if not self.is_available():
             return False
-        
+
         try:
             return bool(self._client.exists(key))
         except RedisError as e:
             print(f"[RedisCache] Error checking key {key}: {e}")
             return False
-    
+
     def clear_pattern(self, pattern: str) -> int:
         """Delete all keys matching a pattern."""
         if not self.is_available():
             return 0
-        
+
         try:
             keys = self._client.keys(pattern)
             if keys:

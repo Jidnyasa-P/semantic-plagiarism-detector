@@ -1,15 +1,16 @@
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
+
+from src.core.lexical_similarity import lexical_similarity_matrix
 from src.core.similarity import (
-    document_similarity_matrix,
     chunk_max_similarity,
     chunk_similarity_matrix,
-    flag_plagiarism,
+    document_similarity_matrix,
     find_most_similar_chunks,
+    flag_plagiarism,
     hybrid_similarity_matrix,
 )
-from src.core.lexical_similarity import lexical_similarity_matrix
 
 
 @pytest.fixture

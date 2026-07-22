@@ -1,15 +1,16 @@
 import csv
 import io
+
 import pytest
 
 from src.db.incidents import (
-    init_incident_db,
     build_incident_id,
-    sync_flagged_incidents,
-    get_all_incidents,
-    update_review_status,
-    incidents_to_csv,
     export_current_flags_csv,
+    get_all_incidents,
+    incidents_to_csv,
+    init_incident_db,
+    sync_flagged_incidents,
+    update_review_status,
 )
 
 

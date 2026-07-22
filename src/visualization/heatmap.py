@@ -7,14 +7,15 @@ Generates similarity heatmaps.
 - plot_chunk_similarity_comparison → Matplotlib chunk-level heatmap
 """
 
+from typing import Optional
+
+import matplotlib
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.figure import Figure
 import seaborn as sns
-from typing import Optional
+from matplotlib.figure import Figure
 
 matplotlib.use("Agg")
 
@@ -226,10 +227,10 @@ def plot_similarity_heatmap_plotly(
                 )
 
     cell_px = max(80, 600 // n)
-    
+
     bg_color = theme_colors.get("background", "#FFFFFF") if theme_colors else "#FFFFFF"
     ink_color = theme_colors.get("ink", "#0F172A") if theme_colors else "#0F172A"
-    
+
     fig.update_layout(
         title=dict(text=title, font=dict(size=16, family="Arial Black")),
         height=max(500, n * cell_px + 150),

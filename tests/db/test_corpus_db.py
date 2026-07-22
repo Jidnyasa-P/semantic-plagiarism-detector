@@ -1,18 +1,19 @@
-import pytest
 import numpy as np
+import pytest
+
 from src.db.corpus_db import (
-    init_corpus_db,
-    add_document,
-    get_document_by_hash,
-    get_all_documents,
     add_chunks,
-    get_chunk_registry,
-    get_all_embeddings,
-    delete_document,
+    add_document,
     clear_all_data,
+    delete_document,
+    get_all_documents,
+    get_all_embeddings,
+    get_chunk_registry,
+    get_document_by_hash,
     get_document_chunks_count,
-    get_unique_class_sections,
     get_documents_by_class,
+    get_unique_class_sections,
+    init_corpus_db,
 )
 
 

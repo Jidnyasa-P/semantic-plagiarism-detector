@@ -9,10 +9,11 @@ Uses cosine similarity. Since embeddings are L2-normalised in embedding_model.py
 cosine similarity reduces to the dot product, making this very fast.
 """
 
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
-from typing import Dict, List, Optional, Tuple
 
 # ── Threshold ──────────────────────────────────────────────────────────────────
 # Empirically determined optimal value via evaluation/evaluate.py (F1 = 1.0).

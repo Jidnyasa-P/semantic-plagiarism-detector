@@ -7,13 +7,14 @@ This module provides a TF-IDF based baseline for plagiarism detection,
 which excels at identifying identical lexical copy-pasting.
 """
 
+import functools
 import hashlib
+from typing import Dict
+
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from typing import Dict
-import functools
 
 
 def _make_documents_hash(documents: Dict[str, str]) -> str:

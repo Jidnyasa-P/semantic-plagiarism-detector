@@ -1,6 +1,8 @@
 import os
+from unittest.mock import MagicMock, patch
+
 import requests
-from unittest.mock import patch, MagicMock
+
 from src.core.webhook import send_plagiarism_alert
 
 

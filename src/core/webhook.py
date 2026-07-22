@@ -5,8 +5,9 @@ Utility to dispatch notifications to a Slack or Discord webhook channel
 when high-similarity plagiarism incidents (>= 90%) are detected.
 """
 
-import os
 import logging
+import os
+
 import requests
 from dotenv import load_dotenv
 

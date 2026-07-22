@@ -1,10 +1,11 @@
 import io
 import os
-import pytest
-import numpy as np
 from unittest.mock import patch
-from streamlit.testing.v1 import AppTest
+
+import numpy as np
+import pytest
 from reportlab.pdfgen import canvas
+from streamlit.testing.v1 import AppTest
 
 # Paths to stale artifacts that can pollute test runs
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -29,7 +30,7 @@ def generate_pdf(text: str) -> bytes:
     words = text.split()
     lines = []
     for i in range(0, len(words), 8):
-        lines.append(" ".join(words[i: i + 8]))
+        lines.append(" ".join(words[i : i + 8]))
 
     y = 750
     for line in lines:
@@ -53,6 +54,7 @@ def mock_embed_chunks(chunks, batch_size=64):
 @pytest.fixture(autouse=True)
 def clean_smoke_test_env():
     import os
+
     from src.db.corpus_db import clear_all_data
 
     clear_all_data()

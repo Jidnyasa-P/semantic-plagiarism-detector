@@ -660,7 +660,7 @@ def sidebar_user_badge_html(username: str, role: str) -> str:
     return (
         f'<div class="sidebar-user-badge">'
         f'<div class="avatar">{initial}</div>'
-        f'<div><strong>{username}</strong><br>'
+        f"<div><strong>{username}</strong><br>"
         f'<span style="font-size:0.7rem;color:var(--muted);">{role.upper()}</span></div>'
         f"</div>"
     )
