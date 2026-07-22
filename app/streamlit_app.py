@@ -237,7 +237,7 @@ if not st.session_state.get("authenticated", False):
                 role = get_user_role(username)
                 if role is not None:
                     # Check if 2FA is enabled for this user
-                    enabled, otp_secret = get_2fa_status(username)
+                    enabled, _ = get_2fa_status(username)
                     if enabled:
                         st.session_state.pending_2fa = True
                         st.session_state.pending_username = username
