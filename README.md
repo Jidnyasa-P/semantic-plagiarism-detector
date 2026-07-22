@@ -447,6 +447,29 @@ The TF-IDF baseline relies on exact word overlap — it fails when students para
 Sentence Transformers encode **meaning**, catching paraphrases that surface-level
 methods miss entirely.
 
+## Similarity threshold and severity configuration
+
+All plagiarism and severity boundaries are defined in
+`src/core/config.py`.
+
+| Rule | Default |
+|---|---:|
+| Pair is flagged as plagiarism | `>= 0.59` |
+| Medium severity | `>= 0.75` |
+| High severity | `>= 0.90` |
+
+The required ordering is:
+
+```text
+0.0 <= plagiarism <= medium <= high <= 1.0
+```
+
+The administrator slider controls which pairs are flagged. It does not redefine
+the Medium or High severity bands.
+
+Scores outside `[0.0, 1.0]` are clamped for consistent presentation. Invalid
+non-numeric, NaN, or infinite values are rejected.
+
 ---
 
 ## 📄 License
