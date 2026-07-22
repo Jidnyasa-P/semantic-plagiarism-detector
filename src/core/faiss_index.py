@@ -140,7 +140,7 @@ def search_similar_chunks(
 
     results = []
     for score, idx in zip(scores[0], indices[0]):
-        if idx < 0:
+        if idx < 0 or idx >= len(registry):
             continue
         record = registry[idx]
         if exclude_doc and record.doc_name == exclude_doc:

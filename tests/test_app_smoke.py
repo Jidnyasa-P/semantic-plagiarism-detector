@@ -34,6 +34,16 @@ def mock_embed_chunks(chunks, batch_size=64):
 @patch("src.core.webhook.send_plagiarism_alert")
 @patch("src.core.embedding_model.embed_chunks", side_effect=mock_embed_chunks)
 def test_app_smoke(mock_embed, mock_webhook):
+    import os
+    from src.db.corpus_db import clear_all_data
+    clear_all_data()
+    idx_path = os.path.abspath("corpus.index")
+    if os.path.exists(idx_path):
+        try:
+            os.remove(idx_path)
+        except Exception:
+            pass
+
     # Instantiate AppTest
     at = AppTest.from_file("app/streamlit_app.py")
     
