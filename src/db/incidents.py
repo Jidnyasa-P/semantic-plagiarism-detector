@@ -9,6 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
+from src.core.config import (
+    normalize_score,
+    normalize_severity_label,
+    severity_from_score,
+)
+
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "corpus.db"
 VALID_REVIEW_STATUSES = {"Pending", "Resolved"}
 CSV_COLUMNS = [
@@ -32,22 +38,21 @@ def _normalise_pair(doc_a: str, doc_b: str) -> tuple[str, str]:
 
 def _normalise_score(value: Any) -> float:
     try:
-        score = float(value)
+        return normalize_score(float(value))
     except (TypeError, ValueError):
-        score = 0.0
-    return min(1.0, max(0.0, score))
+        return 0.0
 
 
 def _severity_rank(flag: Mapping[str, Any]) -> str:
     raw = str(flag.get("severity", "")).strip()
     if raw:
-        return raw
+        try:
+            return normalize_severity_label(raw)
+        except ValueError:
+            pass
+
     score = _normalise_score(flag.get("similarity", 0.0))
-    if score >= 0.90:
-        return "High"
-    if score >= 0.59:
-        return "Medium"
-    return "Low"
+    return severity_from_score(score)
 
 
 def build_incident_id(doc_a: str, doc_b: str) -> str:

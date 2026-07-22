@@ -17,6 +17,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
+from src.core.config import severity_key
+
 from reportlab.platypus import (
     PageBreak,
     Paragraph,
@@ -28,18 +30,15 @@ from reportlab.platypus import (
 
 
 def get_similarity_color(score: float) -> HexColor:
-    """
-    Returns a color based on similarity score.
-    - High (≥0.90): Red
-    - Medium (≥0.75): Orange
-    - Low (<0.75): Green
-    """
-    if score >= 0.90:
+    """Return a report color using central severity boundaries."""
+    tier = severity_key(score)
+
+    if tier == "high":
         return HexColor("#ff4b4b")
-    elif score >= 0.75:
+    if tier == "medium":
         return HexColor("#ffa500")
-    else:
-        return HexColor("#21c55d")
+    return HexColor("#21c55d")
+
 
 
 def wrap_text(text: str, max_chars: int = 400) -> str:

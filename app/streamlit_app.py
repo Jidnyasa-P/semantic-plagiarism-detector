@@ -31,6 +31,7 @@ from app.theme import (
     set_theme,
 )
 from src.core.ai_detector import detect_documents_ai_probability
+from src.core.config import DEFAULT_THRESHOLDS, severity_key
 from src.core.document_parser import (
     DEFAULT_OCR_DPI,
     DEFAULT_OCR_LANGUAGE,
@@ -47,7 +48,6 @@ from src.core.faiss_index import (
     search_similar_chunks,
 )
 from src.core.similarity import (
-    PLAGIARISM_THRESHOLD,
     document_similarity_matrix,
     find_most_similar_chunks,
     flag_plagiarism,
@@ -361,11 +361,15 @@ with st.sidebar:
     if user_role == "admin":
         threshold = st.slider(
             "Plagiarism Threshold",
-            0.50,
-            0.99,
-            value=PLAGIARISM_THRESHOLD,
+            min_value=0.0,
+            max_value=DEFAULT_THRESHOLDS.medium,
+            value=DEFAULT_THRESHOLDS.plagiarism,
             step=0.01,
-            help="Cosine similarity threshold for flagging.",
+            help=(
+                "Controls which pairs are flagged. Severity remains Medium "
+                f"at {DEFAULT_THRESHOLDS.medium:.0%} and High at "
+                f"{DEFAULT_THRESHOLDS.high:.0%}."
+            ),
             key="threshold_slider",
         )
         use_chunk_matrix = st.checkbox(
@@ -461,7 +465,7 @@ with st.sidebar:
         st.markdown("</div>", unsafe_allow_html=True)
 
     else:
-        threshold = PLAGIARISM_THRESHOLD
+        threshold = DEFAULT_THRESHOLDS.plagiarism
         use_chunk_matrix = False
         faiss_top_k = 5
         chunk_size = 500
@@ -649,7 +653,11 @@ if (
             Tour.bind(
                 "threshold_slider",
                 title="⚙️ Plagiarism Threshold",
-                desc="Adjust similarity threshold. Recommended: 0.59",
+                desc=(
+                    "Adjust the flagging threshold. Medium severity starts "
+                    f"at {DEFAULT_THRESHOLDS.medium:.0%} and High at "
+                    f"{DEFAULT_THRESHOLDS.high:.0%}."
+                ),
                 side="right",
             ),
             Tour.bind(
@@ -1154,11 +1162,17 @@ else:
         else:
 
             def _highlight(val: Any) -> str:
-                numeric_val = float(val)
-                if numeric_val >= 0.90:
-                    return "background-color:#ff4b4b;color:white;font-weight:bold;"
-                elif numeric_val >= threshold:
-                    return "background-color:#ffa500;color:white;font-weight:bold;"
+                tier = severity_key(float(val))
+                if tier == "high":
+                    return (
+                        "background-color:#ff4b4b;color:white;"
+                        "font-weight:bold;"
+                    )
+                if tier == "medium":
+                    return (
+                        "background-color:#ffa500;color:white;"
+                        "font-weight:bold;"
+                    )
                 return ""
 
             styled_df = active_sim_df.style.format("{:.4f}").map(_highlight)

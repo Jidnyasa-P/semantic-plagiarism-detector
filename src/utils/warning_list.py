@@ -10,6 +10,11 @@ import pandas as pd
 import streamlit as st
 
 from app.theme import badge_html, tier_from_severity_label
+from src.core.config import (
+    normalize_severity_label,
+    severity_from_score,
+    severity_rank,
+)
 
 SORT_FIELDS = {
     "Similarity": "similarity",
@@ -30,21 +35,19 @@ class WarningPage:
     end_index: int
 
 
-def _normalise_warning(warning: Mapping[str, Any]) -> dict[str, Any]:
-    severity = str(warning.get("severity", "")).strip()
-    severity_key = severity.lower()
-
-    if "high" in severity_key:
-        severity_rank = 2
-    elif "medium" in severity_key:
-        severity_rank = 1
-    else:
-        severity_rank = 0
-
+def _normalise_warning(
+    warning: Mapping[str, Any],
+) -> dict[str, Any]:
     try:
         similarity = float(warning.get("similarity", 0.0))
     except (TypeError, ValueError):
         similarity = 0.0
+
+    raw_severity = str(warning.get("severity", "")).strip()
+    try:
+        severity = normalize_severity_label(raw_severity)
+    except ValueError:
+        severity = severity_from_score(similarity)
 
     return {
         **dict(warning),
@@ -52,7 +55,7 @@ def _normalise_warning(warning: Mapping[str, Any]) -> dict[str, Any]:
         "doc_b": str(warning.get("doc_b", "")).strip(),
         "similarity": similarity,
         "severity": severity,
-        "severity_rank": severity_rank,
+        "severity_rank": severity_rank(severity),
     }
 
 
