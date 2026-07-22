@@ -163,6 +163,8 @@ def sync_flagged_incidents(
             raise sqlite3.Error(f"Failed to synchronize incidents: {e}") from e
 
 
+
+
 def get_all_incidents(
     db_path: str | Path = DEFAULT_DB_PATH,
 ) -> list[dict[str, Any]]:

@@ -172,3 +172,28 @@ def test_class_queries():
     class_b_docs = get_documents_by_class("Class B")
     assert "doc_b.pdf" in class_b_docs
     assert len(class_b_docs) == 1
+
+
+def test_clear_all_data_clears_incidents():
+    from src.db.incidents import sync_flagged_incidents, get_all_incidents
+    
+    # 1. Add mock documents
+    add_document("doc1.pdf", "hash1")
+    add_document("doc2.pdf", "hash2")
+    
+    # 2. Add mock incidents
+    flags = [
+        {"doc_a": "doc1.pdf", "doc_b": "doc2.pdf", "similarity": 0.85, "severity": "High"}
+    ]
+    sync_flagged_incidents(flags)
+    
+    # Verify they exist
+    incidents = get_all_incidents()
+    assert len(incidents) == 1
+    
+    # 3. Clear all data
+    clear_all_data()
+    
+    # Verify everything is cleared
+    assert len(get_all_documents()) == 0
+    assert len(get_all_incidents()) == 0

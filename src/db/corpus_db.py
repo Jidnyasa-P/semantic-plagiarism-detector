@@ -217,6 +217,10 @@ def clear_all_data() -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM chunks")
         conn.execute("DELETE FROM documents")
+        try:
+            conn.execute("DELETE FROM plagiarism_incidents")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 

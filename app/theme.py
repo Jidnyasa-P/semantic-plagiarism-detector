@@ -419,6 +419,19 @@ def inject_css() -> None:
             border-color: var(--border) !important;
         }}
 
+        .clear-all-container button {{
+            background-color: var(--danger) !important;
+            color: white !important;
+            border-color: var(--danger) !important;
+            font-weight: 600 !important;
+        }}
+
+        .clear-all-container button:hover {{
+            background-color: #ff3333 !important;
+            color: white !important;
+            border-color: #ff3333 !important;
+        }}
+
         [data-testid="stExpander"],
         [data-testid="stForm"] {{
             background-color: var(--card) !important;
