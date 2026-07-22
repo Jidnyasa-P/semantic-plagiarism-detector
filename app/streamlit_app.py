@@ -44,6 +44,20 @@ from src.core.faiss_index import (
     build_index,
     search_similar_chunks,
     load_index,
+    save_index,
+    load_or_rebuild_index,
+    build_index_from_matrix,
+    load_index,
+)
+from src.core.ai_detector import detect_documents_ai_probability
+from src.db import (
+    init_corpus_db,
+    get_all_documents,
+    delete_document,
+    clear_all_data,
+    get_all_embeddings,
+    get_chunk_registry,
+    get_unique_class_sections,
     build_index_from_matrix,
     load_index,
     load_or_rebuild_index,
@@ -95,6 +109,8 @@ from src.db.auth import (
     verify_user,
     get_user_role,
     get_all_users,
+    get_tour_completed,
+    set_tour_completed,
 )
 from src.utils.warning_list import render_warning_controls
 from src.visualization.heatmap import plot_similarity_heatmap
@@ -226,6 +242,51 @@ if not st.session_state.get("authenticated", False):
 user_role = st.session_state.get("role", "user")
 
 
+@st.dialog("⚠️ Confirm Bulk Clear")
+def clear_all_dialog():
+    st.markdown(
+        "**WARNING:** This action is destructive and cannot be undone. "
+        "This will permanently delete all student documents, paragraph chunks, "
+        "and plagiarism incidents from the database, and reset the FAISS index."
+    )
+    st.write("Are you absolutely sure you want to proceed?")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Cancel", use_container_width=True, key="cancel_clear_all"):
+            st.rerun()
+    with col2:
+        if st.button("Clear All", type="primary", use_container_width=True, key="confirm_clear_all"):
+            # 1. Clear database tables (documents, chunks, incidents)
+            clear_all_data()
+
+            # 2. Clear/reset FAISS index file on disk
+            if os.path.exists(_INDEX_PATH):
+                try:
+                    os.remove(_INDEX_PATH)
+                except Exception as e:
+                    print(f"Error removing FAISS index: {e}")
+
+            # 3. Invalidate Redis cache
+            try:
+                from src.utils.redis_cache import get_cache
+                cache = get_cache()
+                if cache.is_available():
+                    cache.delete("faiss:index:corpus_index")
+                    cache.clear_pattern("analysis:*")
+            except Exception as e:
+                print(f"Error invalidating cache: {e}")
+
+            # 4. Invalidate Session State cache
+            if "analysis_results" in st.session_state:
+                st.session_state.analysis_results = None
+            if "analysis_file_signature" in st.session_state:
+                st.session_state.analysis_file_signature = None
+
+            st.success("All documents, chunks, and incidents have been cleared.")
+            st.rerun()
+
+
 # ── Top-right Theme Toggle ───────────────────────────────────────────────────
 current_theme = get_theme_name()
 
@@ -331,6 +392,33 @@ with st.sidebar:
                 key="ocr_dpi_slider",
             )
 
+        # ── Document Management & Bulk Clear ──
+        st.markdown("---")
+        st.markdown("### 📁 Document Management")
+        existing_docs = get_all_documents()
+        if existing_docs:
+            st.write(f"**{len(existing_docs)}** documents in database")
+            for doc in existing_docs:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(f"📄 {doc['filename']}")
+                with col2:
+                    if st.button("🗑️", key=f"del_{doc['filename']}"):
+                        delete_document(doc["filename"])
+                        embeddings_matrix = get_all_embeddings()
+                        if embeddings_matrix.size > 0:
+                            new_index = build_index_from_matrix(embeddings_matrix)
+                            save_index(new_index, _INDEX_PATH)
+                        else:
+                            if os.path.exists(_INDEX_PATH):
+                                os.remove(_INDEX_PATH)
+                        st.rerun()
+
+        st.markdown('<div class="clear-all-container">', unsafe_allow_html=True)
+        if st.button("🗑️ Clear All Documents", key="clear_all_documents_button", use_container_width=True):
+            clear_all_dialog()
+        st.markdown('</div>', unsafe_allow_html=True)
+
     else:
         threshold = PLAGIARISM_THRESHOLD
         use_chunk_matrix = False
@@ -343,6 +431,137 @@ with st.sidebar:
     unique_classes = ["All Classes"] + get_unique_class_sections()
 
     selected_class = st.selectbox("Select Class/Section", unique_classes, index=0)
+
+# ── Main UI ───────────────────────────────────────────────────────────────────
+st.title("🔍 Semantic Plagiarism Detection System")
+
+uploaded_files = st.file_uploader(
+    "📂 Upload Assignments",
+    type=["pdf", "docx", "txt"],
+    accept_multiple_files=True,
+    key="file_uploader",
+)
+
+file_bytes_dict = {f.name: f.getvalue() for f in uploaded_files} if uploaded_files else {}
+
+if len(file_bytes_dict) < 2:
+    st.info("Upload at least 2 files to begin analysis.")
+    st.stop()
+
+# ── Pipeline Execution ────────────────────────────────────────────────────────
+@st.cache_data(show_spinner=False)
+def run_pipeline(
+    file_bytes_dict: dict[str, bytes],
+    ocr_language: str,
+    ocr_dpi: int,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+):
+    raw_texts = {}
+    for name, data in file_bytes_dict.items():
+        raw_texts[name] = extract_text(
+            _io.BytesIO(data),
+            name,
+            ocr_language=ocr_language,
+            ocr_dpi=ocr_dpi,
+        )
+
+    chunked_docs = chunk_documents(
+        raw_texts,
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    translated_chunked_docs = {}
+
+    for doc_name, chunks in chunked_docs.items():
+        translated_chunked_docs[doc_name] = []
+        for chunk in chunks:
+            prepared = prepare_text_for_embedding(chunk)
+            translated_chunked_docs[doc_name].append(prepared["embedding_text"])
+
+    embeddings = embed_documents(translated_chunked_docs)
+    sim_df = document_similarity_matrix(embeddings)
+
+    names = list(embeddings.keys())
+    n = len(names)
+    chunk_mat = np.zeros((n, n))
+
+    for i, na in enumerate(names):
+        for j, nb in enumerate(names):
+            if i == j:
+                chunk_mat[i, j] = 1.0
+            elif j > i:
+                ea, eb = embeddings[na], embeddings[nb]
+                score = float(np.max(cosine_similarity(ea, eb))) if ea.size and eb.size else 0.0
+                chunk_mat[i, j] = score
+                chunk_mat[j, i] = score
+
+    chunk_sim_df = pd.DataFrame(chunk_mat, index=names, columns=names)
+    faiss_index, registry = build_index(embeddings, chunked_docs)
+    ai_probabilities = detect_documents_ai_probability(chunked_docs)
+
+    return (
+        raw_texts,
+        chunked_docs,
+        embeddings,
+        sim_df,
+        chunk_sim_df,
+        faiss_index,
+        registry,
+        ai_probabilities,
+    )
+
+with st.spinner("🧠 Processing files and building embeddings…"):
+    analysis_results = run_pipeline(
+        file_bytes_dict,
+        ocr_language,
+        ocr_dpi,
+        chunk_size,
+        chunk_overlap,
+    )
+
+(
+    raw_texts,
+    chunked_docs,
+    embeddings,
+    sim_df,
+    chunk_sim_df,
+    faiss_index,
+    registry,
+    ai_probabilities,
+) = analysis_results
+
+active_sim_df = chunk_sim_df if use_chunk_matrix else sim_df
+flags = flag_plagiarism(active_sim_df, threshold=threshold)
+
+st.subheader("📊 Analysis Summary")
+st.write(f"Processed **{len(raw_texts)}** documents with Chunk Size: `{chunk_size}` and Overlap: `{chunk_overlap}`.")
+
+with st.sidebar:
+    selected_class = st.selectbox(
+        "Select Class/Section",
+        unique_classes,
+        index=0,
+        key="class_filter_selectbox",
+    )
+
+
+    st.markdown("---")
+    st.markdown("""
+**How it works**
+1. Upload **PDF, DOCX, or TXT** assignment files or import from Google Drive
+2. Text is extracted according to the file type
+3. Text is split into **paragraph chunks**
+4. Chunks are embedded with **all-MiniLM-L6-v2**
+5. A **FAISS index** is built over all chunk vectors
+6. Pairs above the threshold are flagged
+""")
+    st.markdown("---")
+    st.caption("Semantic Plagiarism Detector · FAISS edition")
+
+
+
+
 
     st.markdown("---")
     if st.button("🚪 Log Out", use_container_width=True, key="logout_button"):
@@ -361,6 +580,45 @@ st.markdown(
 st.divider()
 
 
+
+# ── Onboarding Tour for First-Time Admin Users ───────────────────────────────────
+if Tour is not None and user_role == "admin" and not get_tour_completed(st.session_state.username):
+    username = st.session_state.username
+    
+    if st.button("🎯 Start Guided Tour", key="start_tour_button", type="primary"):
+        st.session_state.show_tour = True
+    
+    if st.session_state.get("show_tour", False):
+        tour_steps = [
+            Tour.info(
+                title="👋 Welcome to the Plagiarism Detection System!",
+                desc="This guided tour will walk you through the key features to help you get started."
+            ),
+            Tour.bind("threshold_slider", 
+                      title="⚙️ Plagiarism Threshold",
+                      desc="Adjust similarity threshold. Recommended: 0.59",
+                      side="right"),
+            Tour.bind("class_filter_selectbox",
+                      title="🔍 Class Filter",
+                      desc="Filter analysis results by specific class sections.",
+                      side="right"),
+            Tour.info(
+                title="📊 Analysis Dashboard",
+                desc="View similarity metrics, flagged pairs, and comparisons in the tabs below."
+            ),
+            Tour.info(
+                title="🎉 You're All Set!",
+                desc="You can now start uploading assignments and detecting plagiarism."
+            ),
+        ]
+        
+        tour = Tour(steps=tour_steps)
+        tour.start()
+        
+        set_tour_completed(username, True)
+        st.session_state.show_tour = False
+        st.success("✅ Onboarding tour completed!")
+        st.rerun()
 
 # ── Header ────────────────────────────────────────────────────────────────────
 # ── Main Header ───────────────────────────────────────────────────────────────
@@ -486,6 +744,7 @@ else:
     # Initialize analysis_results in session state
     if "analysis_results" not in st.session_state:
         st.session_state.analysis_results = None
+            st.info(f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors")
             st.info(
                 f"📂 Loaded FAISS index from Redis cache with {faiss_index.ntotal} vectors"
             )
@@ -497,6 +756,7 @@ else:
 
             if index_recovered:
                 if faiss_index.ntotal:
+                    st.warning(f"FAISS index was missing, corrupted, or inconsistent and was automatically rebuilt from {faiss_index.ntotal} stored vectors.")
                     st.warning(
                         f"FAISS index was missing, corrupted, or inconsistent and was "
                         f"automatically rebuilt from {faiss_index.ntotal} stored vectors."
@@ -507,6 +767,10 @@ else:
                         "initialized safely."
                     )
             else:
+                st.info(f"Loaded and validated the existing FAISS index with {faiss_index.ntotal} vectors.")
+    else:
+        faiss_index = load_index(_INDEX_PATH) if os.path.exists(_INDEX_PATH) else None
+        registry = get_chunk_registry()
                 st.info(
                     f"Loaded and validated the existing FAISS index with "
                     f"{faiss_index.ntotal} vectors."

@@ -5,20 +5,19 @@ SQLite-backed authentication with bcrypt password hashing.
 
 Public API
 ----------
-init_db()                          → create tables + seed default admin
-verify_user(username, password)    → bool
-get_user_role(username)            → str | None
-add_user(username, password, role) → None
-get_all_users()                    → list[dict]
-delete_user(username)              → None
-update_password(username, password)→ None
-get_tour_completed(username)       → bool
+init_db()                            → create tables + seed default admin
+verify_user(username, password)      → bool
+get_user_role(username)              → str | None
+add_user(username, password, role)   → None
+get_all_users()                      → list[dict]
+delete_user(username)                → None
+update_password(username, password)  → None
+get_tour_completed(username)         → bool
 set_tour_completed(username, completed) → None
 """
 
 import os
 import sqlite3
-
 import bcrypt
 
 _DB_PATH = os.path.abspath(
@@ -42,30 +41,24 @@ def _hash_password(password: str) -> str:
 
 def _validate_username(username: str) -> str:
     username = str(username).strip().lower()
-
     if not username:
         raise ValueError("Username cannot be empty.")
-
     return username
 
 
 def _validate_password(password: str) -> str:
     password = str(password)
-
     if len(password.strip()) < 6:
         raise ValueError("Password must be at least 6 characters long.")
-
     return password
 
 
 def _validate_role(role: str) -> str:
     role = str(role).strip().lower()
-
     if role not in VALID_ROLES:
         raise ValueError(
             f"Role must be one of: {', '.join(sorted(VALID_ROLES))}"
         )
-
     return role
 
 
@@ -81,7 +74,7 @@ def init_db() -> None:
                 role TEXT NOT NULL DEFAULT 'teacher',
                 tour_completed INTEGER DEFAULT 0
             )
-        """
+            """
         )
         conn.commit()
 
@@ -95,27 +88,20 @@ def init_db() -> None:
             )
             conn.commit()
 
-        exists = conn.execute(
-            "SELECT 1 FROM users WHERE username = ?",
+        # Optimized check using COUNT(1) for #185
+        cursor = conn.execute(
+            "SELECT COUNT(1) FROM users WHERE username = ?",
             ("admin",),
-        ).fetchone()
+        )
+        exists = cursor.fetchone()[0] > 0
 
         if not exists:
-
-            hashed = bcrypt.hashpw(
-                b"admin123",
-                bcrypt.gensalt(10),
-            ).decode()
-
-
             hashed = _hash_password("admin123")
-
             conn.execute(
                 "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
                 ("admin", hashed, "admin"),
             )
-
-        conn.commit()
+            conn.commit()
 
 
 def verify_user(username: str, password: str) -> bool:
@@ -135,6 +121,10 @@ def verify_user(username: str, password: str) -> bool:
     return bcrypt.checkpw(password.encode(), row[0].encode())
 
 
+# Alias for compatibility
+authenticate_user = verify_user
+
+
 def get_user_role(username: str) -> str | None:
     """Return the role of a user, or None if not found."""
     username = _validate_username(username)
@@ -149,21 +139,21 @@ def get_user_role(username: str) -> str | None:
 
 
 def add_user(username: str, password: str, role: str = "teacher") -> None:
-    """Insert a new user with a bcrypt-hashed password."""
-
+    """Insert a new user with a bcrypt-hashed password after checking existence."""
     username = _validate_username(username)
     password = _validate_password(password)
     role = _validate_role(role)
 
-    hashed = bcrypt.hashpw(
-        password.encode(),
-        bcrypt.gensalt(10),
-    ).decode()
-
-
-    hashed = _hash_password(password)
-
     with _connect() as conn:
+        # Optimized check using COUNT(1) for #185
+        cursor = conn.execute(
+            "SELECT COUNT(1) FROM users WHERE username = ?",
+            (username,),
+        )
+        if cursor.fetchone()[0] > 0:
+            raise ValueError(f"User '{username}' already exists.")
+
+        hashed = _hash_password(password)
         conn.execute(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
             (username, hashed, role),
@@ -202,19 +192,19 @@ def delete_user(username: str) -> None:
 
 def update_password(username: str, new_password: str) -> None:
     """Update a user's password with a new bcrypt hash."""
-
     username = _validate_username(username)
     new_password = _validate_password(new_password)
 
-    hashed = bcrypt.hashpw(
-        new_password.encode(),
-        bcrypt.gensalt(10),
-    ).decode()
-
-
-    hashed = _hash_password(new_password)
-
     with _connect() as conn:
+        # Optimized check using COUNT(1) for #185
+        cursor = conn.execute(
+            "SELECT COUNT(1) FROM users WHERE username = ?",
+            (username,),
+        )
+        if cursor.fetchone()[0] == 0:
+            raise ValueError("User not found.")
+
+        hashed = _hash_password(new_password)
         conn.execute(
             "UPDATE users SET password = ? WHERE username = ?",
             (hashed, username),
