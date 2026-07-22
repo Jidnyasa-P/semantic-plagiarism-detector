@@ -162,6 +162,37 @@ Additional users can be created from the **User Management** page (admin only).
 
 ---
 
+## ⚓ Pre-commit Hooks
+
+To maintain code quality and styling standards, we use client-side Git hooks managed by `pre-commit`. The hooks execute automatically before every commit to format and check code.
+
+### Installation
+
+1. Install the `pre-commit` utility:
+   ```bash
+   pip install pre-commit
+   ```
+
+2. Install the Git hooks:
+   ```bash
+   pre-commit install
+   ```
+
+After installation, the following checks run automatically on every staged file:
+- **`black`**: Formats Python code.
+- **`isort`**: Sorts import lines.
+- **`ruff`**: Checks for lint warnings and errors.
+- **`pre-commit-hooks`**: Performs basic validation (trailing whitespace, end-of-file fixer, check-yaml, check-added-large-files).
+
+### Run Hooks Manually
+
+You can manually trigger all hooks on all files in the repository at any time:
+```bash
+pre-commit run --all-files
+```
+
+---
+
 ## OCR support for scanned PDFs
 
 Scanned and image-only PDFs are automatically detected page by page. Pages that

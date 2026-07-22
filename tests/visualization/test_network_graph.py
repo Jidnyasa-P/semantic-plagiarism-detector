@@ -5,9 +5,10 @@ Unit tests for plot_similarity_network edge cases.
 """
 
 from unittest.mock import patch
+
 import pandas as pd
 import plotly.graph_objects as go
-import pytest
+
 from src.visualization.network_graph import plot_similarity_network
 
 

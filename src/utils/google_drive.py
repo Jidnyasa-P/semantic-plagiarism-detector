@@ -5,14 +5,14 @@ Utilities for authenticating with Google Drive API, listing folder contents,
 and bulk downloading supported assignment files (.pdf, .docx, .txt).
 """
 
+import io
 import os
 import re
-import io
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from google.oauth2.credentials import Credentials
-from google.oauth2 import service_account
 
 # Supported extensions for the plagiarism detection pipeline
 SUPPORTED_EXTENSIONS = (".pdf", ".docx", ".txt")
@@ -39,14 +39,16 @@ def extract_folder_id(url_or_id: str) -> Optional[str]:
     return None
 
 
-def get_drive_service(api_key: Optional[str] = None, service_account_info: Optional[dict] = None):
+def get_drive_service(
+    api_key: Optional[str] = None, service_account_info: Optional[dict] = None
+):
     """
     Builds and returns a Google Drive API service instance using an API key or Service Account.
     """
     if service_account_info:
         creds = service_account.Credentials.from_service_account_info(
             service_account_info,
-            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+            scopes=["https://www.googleapis.com/auth/drive.readonly"],
         )
         return build("drive", "v3", credentials=creds)
     elif api_key:
@@ -64,11 +66,15 @@ def list_files_in_folder(service, folder_id: str) -> List[Dict[str, str]]:
     Lists all supported assignment files (.pdf, .docx, .txt) within a specified Google Drive folder.
     """
     query = f"'{folder_id}' in parents and trashed = false"
-    results = service.files().list(
-        q=query,
-        pageSize=100,
-        fields="nextPageToken, files(id, name, mimeType, size)"
-    ).execute()
+    results = (
+        service.files()
+        .list(
+            q=query,
+            pageSize=100,
+            fields="nextPageToken, files(id, name, mimeType, size)",
+        )
+        .execute()
+    )
 
     files = results.get("files", [])
     supported_files = [
@@ -106,7 +112,9 @@ def bulk_download_drive_folder(
     if not folder_id:
         raise ValueError("Invalid Google Drive Folder URL or ID.")
 
-    service = get_drive_service(api_key=api_key, service_account_info=service_account_info)
+    service = get_drive_service(
+        api_key=api_key, service_account_info=service_account_info
+    )
     files_to_download = list_files_in_folder(service, folder_id)
 
     downloaded_files_dict = {}

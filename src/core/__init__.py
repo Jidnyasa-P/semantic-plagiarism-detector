@@ -1,27 +1,27 @@
 from .document_parser import (
-    extract_text_from_pdf,
-    extract_texts_from_pdfs,
     extract_text,
+    extract_text_from_pdf,
     extract_texts,
+    extract_texts_from_pdfs,
+)
+from .embedding_model import embed_chunks, embed_documents, get_document_embedding
+from .faiss_index import (
+    ChunkRecord,
+    build_index,
+    build_index_from_matrix,
+    find_plagiarised_chunks,
+    load_index,
+    save_index,
+    search_similar_chunks,
+)
+from .similarity import (
+    PLAGIARISM_THRESHOLD,
+    chunk_similarity_matrix,
+    document_similarity_matrix,
+    find_most_similar_chunks,
+    flag_plagiarism,
 )
 from .text_chunking import chunk_document, chunk_documents
-from .embedding_model import embed_chunks, embed_documents, get_document_embedding
-from .similarity import (
-    document_similarity_matrix,
-    chunk_similarity_matrix,
-    flag_plagiarism,
-    find_most_similar_chunks,
-    PLAGIARISM_THRESHOLD,
-)
-from .faiss_index import (
-    build_index,
-    search_similar_chunks,
-    find_plagiarised_chunks,
-    save_index,
-    load_index,
-    ChunkRecord,
-    build_index_from_matrix,
-)
 from .translator import translate_text
 from .webhook import send_plagiarism_alert
 

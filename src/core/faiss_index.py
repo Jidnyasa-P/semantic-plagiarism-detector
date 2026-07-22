@@ -19,12 +19,13 @@ Since embeddings are L2-normalised in embedding_model.py,
 inner product == cosine similarity.
 """
 
+import os
+import tempfile
+from typing import Dict, List, Optional, Tuple
+
 # FAISS has no official type stubs; suppress Pylance false positives
 import faiss  # type: ignore
 import numpy as np
-import os
-import tempfile
-from typing import Dict, List, Tuple, Optional
 
 # ── Threshold for automatic index selection ────────────────────────────────────
 _IVF_THRESHOLD = 5_000  # Switch from flat to IVF when vectors exceed this
@@ -237,10 +238,7 @@ def save_index(index: faiss.Index, path: str) -> None:
         if os.path.exists(temporary_path):
             os.remove(temporary_path)
 
-    print(
-        f"[faiss_index] Index saved to {destination} "
-        f"({index.ntotal} vectors)"
-    )
+    print(f"[faiss_index] Index saved to {destination} " f"({index.ntotal} vectors)")
 
 
 def validate_index(
@@ -256,10 +254,7 @@ def validate_index(
     try:
         if int(index.ntotal) != int(expected_vector_count):
             return False
-        if (
-            expected_dimension is not None
-            and int(index.d) != int(expected_dimension)
-        ):
+        if expected_dimension is not None and int(index.d) != int(expected_dimension):
             return False
     except (AttributeError, TypeError, ValueError):
         return False
@@ -299,9 +294,7 @@ def load_or_rebuild_index(
     registry = get_chunk_registry()
     expected_count = int(matrix.shape[0]) if matrix.ndim == 2 else 0
     expected_dimension = (
-        int(matrix.shape[1])
-        if matrix.ndim == 2 and matrix.shape[1] > 0
-        else 384
+        int(matrix.shape[1]) if matrix.ndim == 2 and matrix.shape[1] > 0 else 384
     )
 
     if expected_count != len(registry):

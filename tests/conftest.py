@@ -20,10 +20,10 @@ TensorFlow / Keras installation. The embedding_model tests mock _get_model()
 directly, so no real model is loaded.
 """
 
+import pathlib
+import shutil
 import sys
 import types
-import shutil
-import pathlib
 from unittest.mock import MagicMock
 
 # ── Repository Root Path Bootstrap ────────────────────────────────────────────

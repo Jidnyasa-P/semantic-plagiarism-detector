@@ -5,13 +5,13 @@ Generates interactive document plagiarism network graphs using networkx and Plot
 Documents are represented as nodes, and similarities above the threshold are edges.
 """
 
-import networkx as nx
-import plotly.graph_objects as go
-import pandas as pd
-import numpy as np
-
-
 from typing import Optional
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+
 
 def plot_similarity_network(
     similarity_df: pd.DataFrame,
@@ -141,11 +141,17 @@ def plot_similarity_network(
 
         # Color based on degree
         if deg == 0:
-            node_color.append(theme_colors.get("success", "#2e7d32") if theme_colors else "#2e7d32")
+            node_color.append(
+                theme_colors.get("success", "#2e7d32") if theme_colors else "#2e7d32"
+            )
         elif deg == 1:
-            node_color.append(theme_colors.get("warning", "#f9a825") if theme_colors else "#f9a825")
+            node_color.append(
+                theme_colors.get("warning", "#f9a825") if theme_colors else "#f9a825"
+            )
         else:
-            node_color.append(theme_colors.get("danger", "#c62828") if theme_colors else "#c62828")
+            node_color.append(
+                theme_colors.get("danger", "#c62828") if theme_colors else "#c62828"
+            )
 
         node_hover.append(
             f"<b>📄 Document:</b> {node}<br>"
@@ -171,7 +177,11 @@ def plot_similarity_network(
             size=node_size,
             line=dict(
                 width=2,
-                color=theme_colors.get("background", "#ffffff") if theme_colors else "#ffffff",
+                color=(
+                    theme_colors.get("background", "#ffffff")
+                    if theme_colors
+                    else "#ffffff"
+                ),
             ),
         ),
         name="Documents",

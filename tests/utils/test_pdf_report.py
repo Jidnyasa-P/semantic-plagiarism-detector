@@ -1,6 +1,7 @@
 """Tests for src/utils/pdf_report.py PDF plagiarism report generation."""
 
 from io import BytesIO
+
 from PyPDF2 import PdfReader
 
 from src.utils.pdf_report import (

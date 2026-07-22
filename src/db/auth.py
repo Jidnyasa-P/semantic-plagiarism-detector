@@ -16,9 +16,10 @@ get_tour_completed(username)       → bool
 set_tour_completed(username, completed) → None
 """
 
-import sqlite3
-import bcrypt
 import os
+import sqlite3
+
+import bcrypt
 
 _DB_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "users.db")
@@ -27,6 +28,8 @@ _DB_PATH = os.path.abspath(
 
 def _connect() -> sqlite3.Connection:
     return sqlite3.connect(_DB_PATH, check_same_thread=False)
+
+
 def _hash_password(password: str) -> str:
     """Return a bcrypt hash for the given password."""
     return bcrypt.hashpw(
@@ -38,7 +41,8 @@ def _hash_password(password: str) -> str:
 def init_db() -> None:
     """Create users table and seed default admin if not exists."""
     with _connect() as conn:
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT    UNIQUE NOT NULL,
@@ -46,16 +50,19 @@ def init_db() -> None:
                 role     TEXT    NOT NULL DEFAULT 'teacher',
                 tour_completed INTEGER DEFAULT 0
             )
-        """)
+        """
+        )
         conn.commit()
-        
+
         # Schema migration: add tour_completed column if it doesn't exist
         cursor = conn.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in cursor.fetchall()]
         if "tour_completed" not in columns:
-            conn.execute("ALTER TABLE users ADD COLUMN tour_completed INTEGER DEFAULT 0")
+            conn.execute(
+                "ALTER TABLE users ADD COLUMN tour_completed INTEGER DEFAULT 0"
+            )
             conn.commit()
-        
+
         exists = conn.execute(
             "SELECT 1 FROM users WHERE username = ?", ("admin",)
         ).fetchone()
@@ -143,64 +150,3 @@ def set_tour_completed(username: str, completed: bool = True) -> None:
             (1 if completed else 0, username.lower()),
         )
         conn.commit()
-def test_get_all_users():
-    username = uuid.uuid4().hex
-
-    add_user(username, "password123")
-
-    users = get_all_users()
-
-    usernames = [user["username"] for user in users]
-
-    assert username in usernames
-def test_verify_nonexistent_user():
-    assert verify_user("unknown_user", "password") is False
-def test_update_password_changes_password():
-    username = uuid.uuid4().hex
-
-    add_user(username, "oldpassword")
-
-    update_password(username, "newpassword")
-
-    assert verify_user(username, "oldpassword") is False
-    assert verify_user(username, "newpassword") is True
-def test_delete_nonexistent_user():
-    delete_user("does_not_exist")
-
-    assert get_user_role("does_not_exist") is None
-def test_default_admin_exists():
-    init_db()
-
-    assert verify_user("admin", "admin123") is True
-    assert get_user_role("admin") == "admin"
-def test_add_user_default_role():
-    username = uuid.uuid4().hex
-
-    add_user(username, "password123")
-
-    assert get_user_role(username) == "teacher"
-def test_add_user_custom_role():
-    username = uuid.uuid4().hex
-
-    add_user(username, "password123", "admin")
-
-    assert get_user_role(username) == "admin"
-def test_tour_completed():
-    username = uuid.uuid4().hex
-
-    add_user(username, "password123")
-
-    assert get_tour_completed(username) is False
-
-    set_tour_completed(username, True)
-
-    assert get_tour_completed(username) is True
-def test_reset_tour_completed():
-    username = uuid.uuid4().hex
-
-    add_user(username, "password123")
-
-    set_tour_completed(username, True)
-    set_tour_completed(username, False)
-
-    assert get_tour_completed(username) is False

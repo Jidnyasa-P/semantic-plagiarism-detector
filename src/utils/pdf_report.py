@@ -5,24 +5,25 @@ Generates professional PDF plagiarism reports using ReportLab.
 Provides side-by-side comparison of suspicious paragraph pairs with visual similarity indicators.
 """
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import inch
+from datetime import datetime
+from io import BytesIO
+from typing import List, Optional, Tuple
+
+from reportlab.lib import colors
 from reportlab.lib.colors import HexColor
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
-    SimpleDocTemplate,
+    PageBreak,
     Paragraph,
+    SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
-    PageBreak,
 )
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.lib import colors
-from reportlab.lib.utils import ImageReader
-from io import BytesIO
-from typing import List, Optional, Tuple
-from datetime import datetime
 
 
 def get_similarity_color(score: float) -> HexColor:
@@ -312,52 +313,10 @@ def generate_plagiarism_report(
     doc.build(story, onFirstPage=_draw_header, onLaterPages=_draw_header)
     buffer.seek(0)
     return buffer
+
+
 import fitz  # PyMuPDF
 
-
-def highlight_pdf_matches(
-    pdf_source: str | bytes,
-    matching_chunks: List[str],
-    highlight_color: Tuple[float, float, float] = (1.0, 0.85, 0.0),  # Yellow
-) -> bytes:
-    """
-    Opens an original PDF, searches for matching plagiarized text chunks,
-    applies yellow highlight annotations on exact coordinate boxes,
-    and returns the modified PDF as bytes.
-
-    Args:
-        pdf_source: Path to the PDF file (str) or raw bytes (bytes)
-        matching_chunks: List of text chunk strings to search and highlight
-        highlight_color: RGB tuple normalized between 0.0 and 1.0
-
-    Returns:
-        bytes: Binary PDF data with highlighted matches
-    """
-    if isinstance(pdf_source, bytes):
-        doc = fitz.open(stream=pdf_source, filetype="pdf")
-    else:
-        doc = fitz.open(pdf_source)
-
-    for page in doc:
-        for chunk in matching_chunks:
-            chunk_clean = chunk.strip()
-            # Skip very short or empty chunks to prevent accidental full-page highlights
-            if len(chunk_clean) < 3:
-                continue
-
-            # Search for coordinate rectangles of the text on the page
-            quad_matches = page.search_for(chunk_clean)
-            for rect in quad_matches:
-                annot = page.add_highlight_annot(rect)
-                annot.set_colors(stroke=highlight_color)
-                annot.update()
-
-    # Save highlighted PDF to byte stream
-    output_buffer = doc.tobytes()
-    doc.close()
-    return output_buffer
-
-import fitz  # PyMuPDF
 
 def highlight_pdf_matches(
     pdf_source: str | bytes,

@@ -7,6 +7,7 @@ Tests healthcheck, Bearer token authentication, and document scanning endpoint.
 
 import io
 from unittest.mock import patch
+
 import numpy as np
 from fastapi.testclient import TestClient
 
@@ -83,7 +84,9 @@ def test_scan_matching_corpus_flag(mock_embed, mock_corpus):
     # Mock corpus document with identical embedding
     mock_corpus.return_value = {
         "existing_essay.txt": {
-            "chunks": ["Artificial Intelligence and Machine Learning are transforming modern higher education."],
+            "chunks": [
+                "Artificial Intelligence and Machine Learning are transforming modern higher education."
+            ],
             "embeddings": dummy_vec,
         }
     }

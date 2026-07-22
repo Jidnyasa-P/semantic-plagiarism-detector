@@ -3,10 +3,10 @@
 import os
 from typing import Dict
 
+import numpy as np
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer
-import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from src.core.document_parser import extract_text
@@ -62,6 +62,7 @@ def verify_bearer_token(
 
 # ── Database Helpers ───────────────────────────────────────────────────────────
 
+
 def get_corpus_documents_with_embeddings() -> Dict[str, Dict]:
     """Load all stored corpus documents, text chunks, and chunk embeddings from SQLite."""
     init_corpus_db()
@@ -92,6 +93,7 @@ def get_corpus_documents_with_embeddings() -> Dict[str, Dict]:
 
 # ── API Endpoints ──────────────────────────────────────────────────────────────
 
+
 @app.get("/health", tags=["Health"])
 def health_check():
     """Healthcheck endpoint for readiness and liveness probes."""
@@ -104,7 +106,9 @@ def health_check():
 
 @app.post("/api/v1/scan", tags=["Plagiarism Detection"])
 async def scan_document(
-    file: UploadFile = File(..., description="Document file to scan (.pdf, .docx, .txt)"),
+    file: UploadFile = File(
+        ..., description="Document file to scan (.pdf, .docx, .txt)"
+    ),
     threshold: float = Query(
         default=PLAGIARISM_THRESHOLD,
         ge=0.0,

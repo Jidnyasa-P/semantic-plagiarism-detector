@@ -9,10 +9,11 @@ from collections import Counter
 from pathlib import Path
 from typing import BinaryIO, Dict, List, Union
 
-from langdetect import LangDetectException, detect
-from src.core.translator import translate_text
 import docx
 import pdfplumber
+from langdetect import LangDetectException, detect
+
+from src.core.translator import translate_text
 
 # OCR dependencies are imported lazily so TXT/DOCX and normal text PDFs still
 # work even when Tesseract is not installed on the machine.
@@ -333,8 +334,9 @@ def _parse_pdf_page(
     ocr_language: str,
 ) -> List[str]:
     """Helper running in a subprocess to extract text from a single PDF page."""
-    import pdfplumber
     import io
+
+    import pdfplumber
 
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -425,7 +427,9 @@ def extract_texts_parallel(
 
         return results, errors
     except Exception as exc:
-        print(f"[document_parser] ProcessPoolExecutor failed ({exc}), falling back to sequential extraction...")
+        print(
+            f"[document_parser] ProcessPoolExecutor failed ({exc}), falling back to sequential extraction..."
+        )
         results.clear()
         errors.clear()
         for name, data in files_dict.items():
@@ -489,7 +493,9 @@ def extract_text_from_pdf(
         except OCRDependencyError:
             raise
         except Exception as exc:
-            print(f"[document_parser] ProcessPoolExecutor failed ({exc}), falling back to sequential page parsing...")
+            print(
+                f"[document_parser] ProcessPoolExecutor failed ({exc}), falling back to sequential page parsing..."
+            )
             page_lines = [
                 _parse_pdf_page(
                     pdf_bytes,
@@ -701,4 +707,3 @@ def extract_texts(files: list) -> Dict[str, str]:
 # Cross-lingual embedding preparation (Issue #46)
 # Re-exported here because parsing is the boundary where raw source text is
 # converted into embedding-ready text.
-

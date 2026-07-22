@@ -1,14 +1,16 @@
 import io
 import shutil
-import pytest
-import docx
 from unittest.mock import MagicMock, patch
+
+import docx
+import pytest
+
 from src.core.document_parser import (
     extract_text,
-    extract_texts,
-    extract_text_from_pdf,
     extract_text_from_docx,
+    extract_text_from_pdf,
     extract_text_from_txt,
+    extract_texts,
     strip_bibliography,
 )
 
@@ -138,6 +140,7 @@ def test_extract_texts_mixed():
 # ---------------------------------------------------------------------------
 # strip_bibliography tests (Issue #116)
 # ---------------------------------------------------------------------------
+
 
 class TestStripBibliography:
 
